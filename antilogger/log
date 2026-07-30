@@ -1,0 +1,6 @@
+local _, s = pcall(function(...)
+     string.byte("a", function(...)
+        return; 
+     end, 9999, 38);
+end)
+if s:find("httplog") or s:find("sandbox") then while true do end; end;
