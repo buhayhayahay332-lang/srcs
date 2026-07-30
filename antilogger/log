@@ -1,3 +1,4 @@
+--// this works on 25ms as tested. idk about other logger.
 local _, s = pcall(function(...)
      string.byte("a", function(...)
         return; 
