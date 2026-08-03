@@ -1,55 +1,66 @@
---test 7
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService      = game:GetService("HttpService")
+local CoreGui          = game:GetService("CoreGui")
+
+local cloneref      = cloneref      or function(o) return o end
+local clonefunction = clonefunction or function(f) return f end
 
 local LocalPlayer = Players.LocalPlayer
 local Camera      = workspace.CurrentCamera
 
+local repo         = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+local Options  = Library.Options
+local Toggles  = Library.Toggles
+
 local Settings = {
-    SilentAim = {
-        Enabled   = false,
-        FOV       = 200,
-        HitChance = 100,
-        ShowFOV   = false,
-    },
     AimAssist = {
-        Enabled    = false,
-        Smoothness = 0.08,
-        FOV        = 300,
-        Key        = Enum.UserInputType.MouseButton2,
-    },
-    KnifeAura = {
-        Enabled     = false,
-        Range       = 10,
-        Delay       = 0.1,
-        AttackStage = 1,
-        Headshot    = false,
-    },
-    ESP = {
-        Enabled  = false,
-        Box      = false,
-        Health   = false,
-        Tracers  = false,
-        HeadDot  = false,
-        Name     = false,
-        BoxColor = Color3.fromRGB(255, 255, 255),
+        Enabled         = false,
+        FOVRadius       = 150,
+        Smoothness      = 0.15,
+        ShowFOV         = true,
+        VisibilityCheck = false,
+        Key             = "MB2",
     },
     Chams = {
         Enabled             = false,
-        Color               = Color3.fromRGB(255, 0, 255),
-        OutlineColor        = Color3.fromRGB(255, 255, 255),
+        FillColor           = Color3.fromRGB(255, 60, 60),
         FillTransparency    = 0.5,
+        OutlineColor        = Color3.fromRGB(255, 255, 255),
         OutlineTransparency = 0,
     },
+    Hitbox = {
+        Enabled = false,
+        Size    = 1,
+    },
+    SilentAim = {
+        Enabled   = true,
+        FOV       = 500,
+        HitChance = 100,
+    },
+    KnifeAura = {
+        Enabled     = false,
+        Range       = 20,
+        Delay       = 0.1,
+        AttackStage = 1,
+        Headshot    = true,
+    },
+    Movement = {
+        WalkSpeed   = 16,
+        SprintSpeed = 26,
+        JumpHeight  = 10,
+    },
+    Misc = {
+        StabCooldown = 1,
+        ThrowCooldown = 1,
+    },
 }
-
-local function getMousePos()
-    return UserInputService:GetMouseLocation()
-end
 
 local function worldToViewport(pos)
     local v, onScreen = Camera:WorldToViewportPoint(pos)
@@ -58,13 +69,7 @@ end
 
 local function isEnemy(player)
     if player == LocalPlayer then return false end
-    local myChar = LocalPlayer.Character
-    if not myChar then return false end
-    return true
-end
-
-local function getRoot(char)
-    return char and char:FindFirstChild("HumanoidRootPart")
+    return LocalPlayer.Character ~= nil
 end
 
 local function isAlive(player)
@@ -74,9 +79,54 @@ local function isAlive(player)
     return hum and hum.Health > 0
 end
 
-local function getClosestInFOV(fovRadius)
+local function getRoot(char)
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function isVisible(targetPart)
+    local origin    = Camera.CFrame.Position
+    local direction = targetPart.Position - origin
+    local params    = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local filters = {}
+    if LocalPlayer.Character then table.insert(filters, LocalPlayer.Character) end
+    if targetPart.Parent     then table.insert(filters, targetPart.Parent) end
+    params.FilterDescendantsInstances = filters
+    local result = workspace:Raycast(origin, direction, params)
+    return result == nil
+end
+
+local function getClosestInFOVCenter(fovRadius)
+    local vp     = Camera.ViewportSize
+    local center = Vector2.new(vp.X / 2, vp.Y / 2)
+    local fovSq  = fovRadius * fovRadius
+    local best, bestDist, bestChar = nil, fovSq, nil
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if not isEnemy(player) or not isAlive(player) then continue end
+        local char = player.Character
+        local head = char and char:FindFirstChild("Head")
+        if not head then continue end
+
+        local sp, depth, onScreen = worldToViewport(head.Position)
+        if not onScreen or depth <= 0 then continue end
+
+        local dx  = sp.X - center.X
+        local dy  = sp.Y - center.Y
+        local dSq = dx * dx + dy * dy
+
+        if dSq < bestDist then
+            bestDist = dSq
+            best     = head
+            bestChar = char
+        end
+    end
+    return best, bestChar
+end
+
+local function getClosestInFOVMouse(fovRadius)
+    local mousePos = UserInputService:GetMouseLocation()
     local best, bestDist, bestChar = nil, fovRadius, nil
-    local mousePos = getMousePos()
 
     for _, player in ipairs(Players:GetPlayers()) do
         if not isEnemy(player) or not isAlive(player) then continue end
@@ -89,117 +139,308 @@ local function getClosestInFOV(fovRadius)
 
         local d = (mousePos - sp).Magnitude
         if d < bestDist then
-            bestDist  = d
-            best      = head
-            bestChar  = char
+            bestDist = d
+            best     = head
+            bestChar = char
         end
     end
     return best, bestChar
 end
 
-local knifeController   = nil
-local HitDetectionUtils = nil
-
-local function findKnifeController()
-    if not getgc then return nil end
-    for _, v in ipairs(getgc(true)) do
-        if type(v) == "table" and rawget(v, "_GetThrowDirection") and rawget(v, "reportHitSignal") then
-            return v
-        end
+local function isAimAssistKeyHeld()
+    if Options.AA_HoldKey then
+        return Options.AA_HoldKey:GetState()
     end
-    return nil
+    return false
 end
 
-local function findHitDetectionUtils()
-    if not getgc then return nil end
-    for _, v in ipairs(getgc(true)) do
-        if type(v) == "table" and rawget(v, "GetTargets") and rawget(v, "SpherecastProjectile") then
-            return v
-        end
-    end
-    return nil
-end
+local fovGui, fovFrame
 
-task.spawn(function()
-    while not knifeController or not HitDetectionUtils do
-        knifeController   = findKnifeController()
-        HitDetectionUtils = findHitDetectionUtils()
-        task.wait(0.5)
-    end
-end)
+do
+    local guiParent = (type(gethui) == "function" and gethui())
+                   or cloneref(CoreGui)
 
-local function setupMeleeSilentAim()
-    if not HitDetectionUtils then return false end
-    local oldGetTargets = HitDetectionUtils.GetTargets
+    fovGui = Instance.new("ScreenGui")
+    fovGui.Name           = "FOV_" .. tostring(math.random(1e8, 9e8))
+    fovGui.ResetOnSpawn   = false
+    fovGui.IgnoreGuiInset = true
+    fovGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    fovGui.DisplayOrder   = 9999
+    fovGui.Parent         = guiParent
 
-    HitDetectionUtils.GetTargets = newcclosure(function(character, ...)
-        if Settings.SilentAim.Enabled and math.random(1, 100) <= Settings.SilentAim.HitChance then
-            local target, targetModel = getClosestInFOV(Settings.SilentAim.FOV)
-            if target and targetModel then
-                return {{model = targetModel, hitPosition = target.Position}}
-            end
-        end
-        return oldGetTargets(character, ...)
+    pcall(function()
+        if syn and syn.protect_gui then syn.protect_gui(fovGui)
+        elseif protect_gui then protect_gui(fovGui) end
     end)
-    return true
+
+    fovFrame = Instance.new("Frame")
+    fovFrame.BackgroundTransparency = 1
+    fovFrame.BorderSizePixel        = 0
+    fovFrame.Parent                 = fovGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent       = fovFrame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color     = Color3.fromRGB(255, 255, 255)
+    stroke.Thickness = 1.5
+    stroke.Parent    = fovFrame
 end
 
-local function setupThrowSilentAim()
-    if not knifeController then return false end
-    if not knifeController._GetThrowDirection then return false end
+RunService.RenderStepped:Connect(function()
+    if not fovFrame then return end
+    local visible = Settings.AimAssist.Enabled and Settings.AimAssist.ShowFOV
+    fovFrame.Visible = visible
+    if not visible then return end
 
-    local oldGetThrowDirection = knifeController._GetThrowDirection
-
-    knifeController._GetThrowDirection = newcclosure(function(self, cameraCFrame)
-        if Settings.SilentAim.Enabled then
-            local target = getClosestInFOV(Settings.SilentAim.FOV)
-            if target then
-                return (target.Position - cameraCFrame.Position).Unit
-            end
-        end
-        return oldGetThrowDirection(self, cameraCFrame)
-    end)
-    return true
-end
-
-task.spawn(function()
-    while true do
-        local meleeHooked = setupMeleeSilentAim()
-        local throwHooked = setupThrowSilentAim()
-        if meleeHooked and throwHooked then
-            print("tite#1!")
-            break
-        end
-        task.wait(0.25)
-    end
+    local vp = Camera.ViewportSize
+    local r  = Settings.AimAssist.FOVRadius
+    fovFrame.Size     = UDim2.new(0, r * 2, 0, r * 2)
+    fovFrame.Position = UDim2.new(0, vp.X / 2 - r, 0, vp.Y / 2 - r)
 end)
 
 RunService.RenderStepped:Connect(function()
     if not Settings.AimAssist.Enabled then return end
+    if not isAimAssistKeyHeld() then return end
 
-    local held = false
-    if Settings.AimAssist.Key == Enum.UserInputType.MouseButton2 then
-        held = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-    elseif Settings.AimAssist.Key == Enum.UserInputType.MouseButton1 then
-        held = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-    end
-    if not held then return end
-
-    local target = getClosestInFOV(Settings.AimAssist.FOV)
+    local target = getClosestInFOVCenter(Settings.AimAssist.FOVRadius)
     if not target then return end
+    if Settings.AimAssist.VisibilityCheck and not isVisible(target) then return end
 
-    pcall(function()
-        local current = Camera.CFrame
-        local goal    = CFrame.lookAt(current.Position, target.Position)
-        Camera.CFrame = current:Lerp(goal, Settings.AimAssist.Smoothness)
-    end)
+    local currentCF   = Camera.CFrame
+    local targetCF    = CFrame.lookAt(currentCF.Position, target.Position)
+    local savedType   = Camera.CameraType
+    Camera.CFrame     = currentCF:Lerp(targetCF, Settings.AimAssist.Smoothness)
+    Camera.CameraType = savedType
 end)
+
+local chamsTable = {}
+
+local function removeChams(player)
+    local h = chamsTable[player]
+    if h then
+        pcall(function() h:Destroy() end)
+        chamsTable[player] = nil
+    end
+end
+
+local function applyChams(player, char)
+    removeChams(player)
+    if not Settings.Chams.Enabled then return end
+
+    local h = Instance.new("Highlight")
+    h.Adornee             = char
+    h.FillColor           = Settings.Chams.FillColor
+    h.FillTransparency    = Settings.Chams.FillTransparency
+    h.OutlineColor        = Settings.Chams.OutlineColor
+    h.OutlineTransparency = Settings.Chams.OutlineTransparency
+    h.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+    h.Parent              = char
+    chamsTable[player]    = h
+end
+
+local function setupPlayerChams(player)
+    if player == LocalPlayer then return end
+    if player.Character then applyChams(player, player.Character) end
+    player.CharacterAdded:Connect(function(char)
+        task.wait(0.1)
+        applyChams(player, char)
+    end)
+end
+
+local function refreshAllChams()
+    for player in pairs(chamsTable) do removeChams(player) end
+    if not Settings.Chams.Enabled then return end
+    for _, p in ipairs(Players:GetPlayers()) do setupPlayerChams(p) end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do setupPlayerChams(p) end
+Players.PlayerAdded:Connect(setupPlayerChams)
+Players.PlayerRemoving:Connect(removeChams)
+
+local hitboxConns = {}
+local HITBOX_PARTS = {
+    Head             = true,
+    HumanoidRootPart = false,
+    UpperTorso       = false,
+    LowerTorso       = false,
+    Torso            = false,
+}
+
+local function clearHitboxConns(player)
+    if hitboxConns[player] then
+        for _, c in ipairs(hitboxConns[player]) do
+            pcall(function() c:Disconnect() end)
+        end
+        hitboxConns[player] = nil
+    end
+end
+
+local function applyHitbox(player, char)
+    clearHitboxConns(player)
+    if not Settings.Hitbox.Enabled then return end
+
+    hitboxConns[player] = {}
+    local s          = Settings.Hitbox.Size
+    local targetSize = Vector3.new(s, s, s)
+
+    local function expandPart(part)
+        if not part:IsA("BasePart") then return end
+        if not HITBOX_PARTS[part.Name] then return end
+        part.Size = targetSize
+        local conn = part:GetPropertyChangedSignal("Size"):Connect(function()
+            if Settings.Hitbox.Enabled and part.Parent then
+                task.defer(function()
+                    if part.Parent and Settings.Hitbox.Enabled then
+                        part.Size = targetSize
+                    end
+                end)
+            end
+        end)
+        table.insert(hitboxConns[player], conn)
+    end
+
+    for _, d in ipairs(char:GetDescendants()) do expandPart(d) end
+    local addedConn = char.DescendantAdded:Connect(expandPart)
+    table.insert(hitboxConns[player], addedConn)
+end
+
+local function setupPlayerHitbox(player)
+    if player == LocalPlayer then return end
+    if player.Character then applyHitbox(player, player.Character) end
+    player.CharacterAdded:Connect(function(char)
+        task.wait(0.1)
+        applyHitbox(player, char)
+    end)
+end
+
+local function refreshAllHitboxes()
+    for player in pairs(hitboxConns) do clearHitboxConns(player) end
+    if not Settings.Hitbox.Enabled then return end
+    for _, p in ipairs(Players:GetPlayers()) do setupPlayerHitbox(p) end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do setupPlayerHitbox(p) end
+Players.PlayerAdded:Connect(setupPlayerHitbox)
+Players.PlayerRemoving:Connect(clearHitboxConns)
+
+local function patchConfigTablesInGC()
+    if not getgc then return end
+    for _, item in ipairs(getgc(true)) do
+        if type(item) == "table" then
+            if rawget(item, "BASE_WALK_SPEED") ~= nil and rawget(item, "SPRINT_SPEED") ~= nil then
+                rawset(item, "BASE_WALK_SPEED",    Settings.Movement.WalkSpeed)
+                rawset(item, "SPRINT_SPEED",       Settings.Movement.SprintSpeed)
+                rawset(item, "MAX_MOMENTUM_SPEED", Settings.Movement.SprintSpeed)
+                rawset(item, "BASE_JUMP_HEIGHT",   Settings.Movement.JumpHeight)
+            end
+            if rawget(item, "StabDebounce") ~= nil or rawget(item, "ThrowCooldown") ~= nil then
+                rawset(item, "StabDebounce",      Settings.Misc.StabCooldown)
+                rawset(item, "ThirdStabDebounce", Settings.Misc.StabCooldown)
+                rawset(item, "ThrowCooldown",     Settings.Misc.ThrowCooldown)
+                rawset(item, "ThrowStabDebounce", Settings.Misc.ThrowCooldown)
+            end
+        end
+    end
+end
+
+local function patchAllUpvaluesInGC()
+    if not getgc then return end
+    for _, fn in ipairs(getgc(true)) do
+        if type(fn) == "function" and not (iscclosure and iscclosure(fn)) then
+            local i = 1
+            while true do
+                local ok, name, val = pcall(debug.getupvalue, fn, i)
+                if not ok or not name then break end
+                if type(val) == "table" then
+                    if rawget(val, "BASE_WALK_SPEED") ~= nil then
+                        val.BASE_WALK_SPEED    = Settings.Movement.WalkSpeed
+                        val.SPRINT_SPEED       = Settings.Movement.SprintSpeed
+                        val.MAX_MOMENTUM_SPEED = Settings.Movement.SprintSpeed
+                        val.BASE_JUMP_HEIGHT   = Settings.Movement.JumpHeight
+                    end
+                    if rawget(val, "StabDebounce") ~= nil or rawget(val, "ThrowCooldown") ~= nil then
+                        val.StabDebounce      = 0.001
+                        val.ThirdStabDebounce = 0.001
+                        val.ThrowCooldown     = 0.001
+                        val.ThrowStabDebounce = 0.001
+                    end
+                end
+                i += 1
+            end
+        end
+    end
+end
+
+patchConfigTablesInGC()
+patchAllUpvaluesInGC()
+
+do
+    local oldLookAt = clonefunction(CFrame.lookAt)
+    hookfunction(CFrame.lookAt, newcclosure(function(eye, target, ...)
+        if Settings.SilentAim.Enabled then
+            local c2 = debug.info(2, "n")
+            local c3 = debug.info(3, "n")
+            if c2 == "GetTargets" or c3 == "GetTargets" then
+                if math.random(1, 100) <= Settings.SilentAim.HitChance then
+                    local aimHead = getClosestInFOVMouse(Settings.SilentAim.FOV)
+                    if aimHead then
+                        return oldLookAt(eye, aimHead.Position)
+                    end
+                end
+            end
+        end
+        return oldLookAt(eye, target, ...)
+    end))
+
+    local oldViewportToRay = clonefunction(Camera.ViewportPointToRay)
+    hookfunction(Camera.ViewportPointToRay, newcclosure(function(self, x, y, depth, ...)
+        if Settings.SilentAim.Enabled then
+            local c2 = debug.info(2, "n")
+            local c3 = debug.info(3, "n")
+            if c2 == "_GetThrowDirection" or c3 == "_GetThrowDirection" then
+                if math.random(1, 100) <= Settings.SilentAim.HitChance then
+                    local aimHead = getClosestInFOVMouse(Settings.SilentAim.FOV)
+                    if aimHead then
+                        local origin = self.CFrame.Position
+                        local dir    = (aimHead.Position - origin).Unit
+                        return Ray.new(origin, dir)
+                    end
+                end
+            end
+        end
+        return oldViewportToRay(self, x, y, depth, ...)
+    end))
+end
+
+local knifeController = nil
+
+local function findKnifeController()
+    if not getgc then return nil end
+    for _, v in ipairs(getgc(true)) do
+        if type(v) == "table"
+        and rawget(v, "_GetThrowDirection")
+        and rawget(v, "reportHitSignal")
+        and rawget(v, "lastKnifeTime") ~= nil then
+            return v
+        end
+    end
+end
 
 local lastAura = 0
 
 RunService.Heartbeat:Connect(function()
-    if not Settings.KnifeAura.Enabled then return end
-    if not knifeController then return end
+    if not knifeController then
+        knifeController = findKnifeController()
+    else
+        knifeController.nextKnifeTime          = 0
+        knifeController.throwStabDebounceUntil = 0
+        knifeController.lastThrowTime          = 0
+        knifeController.comboCanContinueUntil  = 0
+    end
+
+    if not Settings.KnifeAura.Enabled or not knifeController then return end
 
     local now = tick()
     if now - lastAura < Settings.KnifeAura.Delay then return end
@@ -211,16 +452,12 @@ RunService.Heartbeat:Connect(function()
 
     for _, player in ipairs(Players:GetPlayers()) do
         if not isEnemy(player) or not isAlive(player) then continue end
-
         local eChar = player.Character
         local eRoot = getRoot(eChar)
         if not eRoot then continue end
 
-        local dist = (eRoot.Position - myRoot.Position).Magnitude
-        if dist > Settings.KnifeAura.Range then continue end
+        if (eRoot.Position - myRoot.Position).Magnitude > Settings.KnifeAura.Range then continue end
 
-        local stabId     = HttpService:GenerateGUID(false)
-        local hitPos     = eRoot.Position
         local isHeadshot = Settings.KnifeAura.Headshot
         if Settings.KnifeAura.Headshot then
             local head = eChar:FindFirstChild("Head")
@@ -231,12 +468,9 @@ RunService.Heartbeat:Connect(function()
 
         pcall(function()
             knifeController.reportHitSignal:Fire(
-                eChar,
-                "Knife",
-                isHeadshot,
-                nil,
-                stabId,
-                hitPos,
+                eChar, "Knife", isHeadshot, nil,
+                HttpService:GenerateGUID(false),
+                eRoot.Position,
                 Settings.KnifeAura.AttackStage
             )
         end)
@@ -246,263 +480,9 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-local function getExecutorName()
-    if identifyexecutor and type(identifyexecutor) == "function" then
-        local name = identifyexecutor()
-        if name then return name end
-    end
-    if getexecutorname and type(getexecutorname) == "function" then
-        local name = getexecutorname()
-        if name then return name end
-    end
-    return "Unknown"
-end
-local Executor = getExecutorName()
-local IsDelta = (Executor == "Delta")
-
-local fovCircleDrawing  
-local fovCircleGui      
-local fovCircleFrame   
-
-if IsDelta then
-    fovCircleGui = Instance.new("ScreenGui")
-    fovCircleGui.Name = "FOVCircle"
-    fovCircleGui.ResetOnSpawn = false
-    fovCircleGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    fovCircleGui.Parent = cloneref(game:GetService("CoreGui")) 
-
-    fovCircleFrame = Instance.new("Frame")
-    fovCircleFrame.Name = "Circle"
-    fovCircleFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    fovCircleFrame.Size = UDim2.new(0, 0, 0, 0)
-    fovCircleFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    fovCircleFrame.BackgroundTransparency = 1
-    fovCircleFrame.BorderSizePixel = 0
-    fovCircleFrame.Parent = fovCircleGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)  -- full circle
-    corner.Parent = fovCircleFrame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(255, 255, 255)
-    stroke.Thickness = 1.5
-    stroke.Transparency = 0
-    stroke.Parent = fovCircleFrame
-else
-    fovCircleDrawing = Drawing.new("Circle")
-    fovCircleDrawing.Thickness     = 1
-    fovCircleDrawing.NumSides      = 64
-    fovCircleDrawing.Filled        = false
-    fovCircleDrawing.Color         = Color3.fromRGB(255, 255, 255)
-    fovCircleDrawing.Transparency  = 1
-    fovCircleDrawing.ZIndex        = 999
-    fovCircleDrawing.Visible       = false
-end
-
-RunService.RenderStepped:Connect(function()
-    local visible = Settings.SilentAim.Enabled and Settings.SilentAim.ShowFOV
-    local radius = Settings.SilentAim.FOV
-
-    if IsDelta then
-        if fovCircleGui then
-            fovCircleFrame.Size = UDim2.new(0, radius * 2, 0, radius * 2)
-            fovCircleFrame.Visible = visible
-            fovCircleGui.Enabled = visible
-        end
-    else
-        if fovCircleDrawing then
-            fovCircleDrawing.Visible  = visible
-            fovCircleDrawing.Radius   = radius
-            fovCircleDrawing.Position = Camera.ViewportSize / 2
-        end
-    end
-end)
-
-local espDrawings = {}
-local chamsCache  = {}
-
-local function clearESP(player)
-    if espDrawings[player] then
-        for _, drawing in pairs(espDrawings[player]) do drawing:Remove() end
-        espDrawings[player] = nil
-    end
-end
-
-local function clearChams(player)
-    if chamsCache[player] then
-        chamsCache[player]:Destroy()
-        chamsCache[player] = nil
-    end
-end
-
-Players.PlayerRemoving:Connect(function(player)
-    clearESP(player)
-    clearChams(player)
-end)
-
-RunService.RenderStepped:Connect(function()
-    local myChar = LocalPlayer.Character
-    local myRoot = getRoot(myChar)
-    if not myRoot then return end
-
-    if not Settings.ESP.Enabled and not Settings.Chams.Enabled then
-        for player in pairs(espDrawings) do clearESP(player) end
-        for player in pairs(chamsCache)  do clearChams(player) end
-        return
-    end
-
-    local screenCenter = Camera.ViewportSize / 2 
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if not isEnemy(player) or not isAlive(player) then
-            clearESP(player)
-            clearChams(player)
-            continue
-        end
-
-        local char = player.Character
-        local root = getRoot(char)
-        local head = char:FindFirstChild("Head")
-        if not root or not head then
-            clearESP(player)
-            clearChams(player)
-            continue
-        end
-
-        if Settings.Chams.Enabled then
-            local highlight = char:FindFirstChildOfClass("Highlight")
-            if not highlight then
-                highlight         = Instance.new("Highlight")
-                highlight.Adornee = char
-                highlight.Parent  = char
-                chamsCache[player] = highlight
-            end
-            highlight.FillColor             = Settings.Chams.Color
-            highlight.OutlineColor          = Settings.Chams.OutlineColor
-            highlight.FillTransparency      = Settings.Chams.FillTransparency
-            highlight.OutlineTransparency   = Settings.Chams.OutlineTransparency
-        else
-            clearChams(player)
-        end
-
-        if not Settings.ESP.Enabled then
-            clearESP(player)
-            continue
-        end
-
-        if not espDrawings[player] then
-            espDrawings[player] = {
-                Box     = Drawing.new("Square"),
-                Health  = Drawing.new("Square"),
-                Tracer  = Drawing.new("Line"),
-                HeadDot = Drawing.new("Circle"),
-                Name    = Drawing.new("Text"),
-            }
-            for _, d in pairs(espDrawings[player]) do
-                d.Thickness    = 1
-                d.Filled       = false
-                d.Transparency = 1
-                d.ZIndex       = 999
-            end
-            espDrawings[player].Box.Color         = Settings.ESP.BoxColor
-            espDrawings[player].Health.Color       = Color3.fromRGB(0, 255, 0)
-            espDrawings[player].Tracer.Color       = Color3.fromRGB(255, 255, 255)
-            espDrawings[player].HeadDot.Color      = Color3.fromRGB(255, 50, 50)
-            espDrawings[player].HeadDot.Thickness  = 2
-            espDrawings[player].HeadDot.Filled     = true
-            espDrawings[player].Name.Size          = 14
-            espDrawings[player].Name.Color         = Color3.fromRGB(255, 255, 255)
-            espDrawings[player].Name.Center        = true
-            espDrawings[player].Name.Outline       = true
-        end
-
-        local draw     = espDrawings[player]
-        local rootVec  = Camera:WorldToViewportPoint(root.Position)
-        local headVec  = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-
-        local rootPos      = Vector2.new(rootVec.X, rootVec.Y)
-        local headPos      = Vector2.new(headVec.X, headVec.Y)
-        local rootOnScreen = rootVec.Z > 0
-        local headOnScreen = headVec.Z > 0
-
-        local dist      = (root.Position - myRoot.Position).Magnitude
-        local boxHeight = math.clamp((rootPos.Y - headPos.Y) * 1.2, 20, 300)
-        local boxWidth  = boxHeight * 0.6
-
-        if rootOnScreen and headOnScreen then
-            if Settings.ESP.Box then
-                draw.Box.Visible  = true
-                draw.Box.Position = Vector2.new(rootPos.X - boxWidth / 2, headPos.Y - boxHeight * 0.15)
-                draw.Box.Size     = Vector2.new(boxWidth, boxHeight)
-                draw.Box.Color    = Settings.ESP.BoxColor
-            else
-                draw.Box.Visible = false
-            end
-
-            if Settings.ESP.Health then
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    local hp     = hum.Health / hum.MaxHealth
-                    local barY   = headPos.Y - boxHeight * 0.15
-                    draw.Health.Visible  = true
-                    draw.Health.Position = Vector2.new(rootPos.X - boxWidth / 2 - 6, barY)
-                    draw.Health.Size     = Vector2.new(4, boxHeight * hp)
-                    draw.Health.Color    = Color3.fromRGB(
-                        math.clamp((1 - hp) * 255, 0, 255),
-                        math.clamp(hp * 255, 0, 255),
-                        0
-                    )
-                    draw.Health.Filled = true
-                end
-            else
-                draw.Health.Visible = false
-            end
-
-            if Settings.ESP.Tracers then
-                draw.Tracer.Visible = true
-                draw.Tracer.From    = Vector2.new(screenCenter.X, 0)   
-                draw.Tracer.To      = headPos
-            else
-                draw.Tracer.Visible = false
-            end
-
-            if Settings.ESP.HeadDot then
-                draw.HeadDot.Visible   = true
-                draw.HeadDot.Position  = headPos
-                draw.HeadDot.Radius    = math.clamp(100 / dist, 3, 8)
-            else
-                draw.HeadDot.Visible = false
-            end
-
-            if Settings.ESP.Name then
-                draw.Name.Visible   = true
-                draw.Name.Position  = Vector2.new(rootPos.X, headPos.Y - boxHeight * 0.15 - 18)
-                draw.Name.Text      = player.Name
-            else
-                draw.Name.Visible = false
-            end
-        else
-            draw.Box.Visible     = false
-            draw.Health.Visible  = false
-            draw.Tracer.Visible  = false
-            draw.HeadDot.Visible = false
-            draw.Name.Visible    = false
-        end
-    end
-end)
-
-local repo         = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
-local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
-local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
-
-local Options = Library.Options
-local Toggles = Library.Toggles
-
 local Window = Library:CreateWindow({
     Title            = "K-DEULS FURRY",
-    Icon = 13129527031,
+    Icon             = 13129527031,
     Footer           = "[ASTRO BETA]",
     Center           = true,
     AutoShow         = true,
@@ -511,287 +491,257 @@ local Window = Library:CreateWindow({
 })
 
 local Tabs = {
-    SilentAim  = Window:AddTab("Silent Aim",  "crosshair"),
-    AimAssist  = Window:AddTab("Aim Assist",  "mouse-pointer-2"),
-    KnifeAura  = Window:AddTab("Knife Aura",  "sword"),
-    ESP        = Window:AddTab("ESP",         "eye"),
-    UISettings = Window:AddTab("UI Settings", "settings"),
+    Combat   = Window:AddTab("Combat",   "crosshair"),
+    Visuals  = Window:AddTab("Visuals",  "eye"),
+    Movement = Window:AddTab("Movement", "zap"),
+    Settings = Window:AddTab("Settings", "settings"),
 }
 
-local saLeft  = Tabs.SilentAim:AddLeftGroupbox("Silent Aim",  "crosshair")
-local saRight = Tabs.SilentAim:AddRightGroupbox("FOV Circle", "circle-dashed")
+local AimL   = Tabs.Combat:AddLeftGroupbox("Aim Assist", "crosshair")
+local KnifeR = Tabs.Combat:AddRightGroupbox("Knife Aura", "zap")
 
-saLeft:AddToggle("SA_Enabled", {
-    Text     = "Enabled",
-    Default  = Settings.SilentAim.Enabled,
-    Risky    = true,
-    Callback = function(v)
-        Settings.SilentAim.Enabled = v
-    end,
-})
-
-saLeft:AddDivider()
-
-saLeft:AddSlider("SA_FOV", {
-    Text     = "FOV Radius",
-    Default  = Settings.SilentAim.FOV,
-    Min      = 10,
-    Max      = 1000,
-    Rounding = 0,
-    Callback = function(v)
-        Settings.SilentAim.FOV = v
-    end,
-})
-
-saLeft:AddSlider("SA_HitChance", {
-    Text     = "Hit Chance",
-    Default  = Settings.SilentAim.HitChance,
-    Min      = 1,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = "%",
-    Callback = function(v)
-        Settings.SilentAim.HitChance = v
-    end,
-})
-
-saRight:AddToggle("SA_ShowFOV", {
-    Text     = "Show FOV Circle",
-    Default  = Settings.SilentAim.ShowFOV,
-    Callback = function(v)
-        Settings.SilentAim.ShowFOV = v
-    end,
-})
-
-local aaLeft  = Tabs.AimAssist:AddLeftGroupbox("Aim Assist", "mouse-pointer-2")
-local aaRight = Tabs.AimAssist:AddRightGroupbox("Settings",  "settings-2")
-
-aaLeft:AddToggle("AA_Enabled", {
-    Text     = "Enabled",
-    Default  = Settings.AimAssist.Enabled,
+AimL:AddToggle("AA_Enabled", {
+    Text    = "Aim Assist",
+    Default = Settings.AimAssist.Enabled,
     Callback = function(v)
         Settings.AimAssist.Enabled = v
+        fovFrame.Visible = v and Settings.AimAssist.ShowFOV
     end,
 })
 
-aaLeft:AddDivider()
+AimL:AddToggle("AA_ShowFOV", {
+    Text    = "Show FOV Circle",
+    Default = Settings.AimAssist.ShowFOV,
+    Callback = function(v) Settings.AimAssist.ShowFOV = v end,
+})
 
-aaLeft:AddSlider("AA_FOV", {
+AimL:AddToggle("AA_VisCheck", {
+    Text    = "Visibility Check",
+    Default = Settings.AimAssist.VisibilityCheck,
+    Callback = function(v) Settings.AimAssist.VisibilityCheck = v end,
+})
+
+AimL:AddSlider("AA_FOV", {
     Text     = "FOV Radius",
-    Default  = Settings.SilentAim.FOV,
-    Min      = 10,
-    Max      = 1000,
+    Default  = Settings.AimAssist.FOVRadius,
+    Min      = 50,
+    Max      = 600,
     Rounding = 0,
-    Callback = function(v)
-        Settings.SilentAim.FOV = v
-    end,
+    Callback = function(v) Settings.AimAssist.FOVRadius = v end,
 })
 
-aaRight:AddSlider("AA_Smoothness", {
+AimL:AddSlider("AA_Smooth", {
     Text     = "Smoothness",
-    Default  = math.floor(Settings.AimAssist.Smoothness * 100),
+    Default  = Settings.AimAssist.Smoothness * 100,
     Min      = 1,
     Max      = 100,
     Rounding = 0,
-    Suffix   = "%",
-    Callback = function(v)
-        Settings.AimAssist.Smoothness = v / 100
+    Tooltip  = "Higher = snappier",
+    Callback = function(v) Settings.AimAssist.Smoothness = v / 100 end,
+})
+
+AimL:AddDivider()
+
+AimL:AddLabel("Hold Key"):AddKeyPicker("AA_HoldKey", {
+    Default         = "MB2",
+    SyncToggleState = false,
+    Mode            = "Hold",
+    Text            = "Aim Hold Key",
+    NoUI            = false,
+    ChangedCallback = function(NewKey)
+        Settings.AimAssist.Key = tostring(NewKey)
     end,
 })
 
-aaRight:AddDropdown("AA_Key", {
-    Text     = "Hold Key",
-    Values   = { "MouseButton1", "MouseButton2" },
-    Default  = "MouseButton2",
-    Callback = function(v)
-        if v == "MouseButton1" then
-            Settings.AimAssist.Key = Enum.UserInputType.MouseButton1
-        else
-            Settings.AimAssist.Key = Enum.UserInputType.MouseButton2
-        end
-    end,
+KnifeR:AddToggle("KA_Enabled", {
+    Text    = "Knife Aura",
+    Default = Settings.KnifeAura.Enabled,
+    Risky   = true,
+    Callback = function(v) Settings.KnifeAura.Enabled = v end,
 })
 
-local kaLeft  = Tabs.KnifeAura:AddLeftGroupbox("Knife Aura", "sword")
-local kaRight = Tabs.KnifeAura:AddRightGroupbox("Settings",  "settings-2")
-
-kaLeft:AddToggle("KA_Enabled", {
-    Text     = "Enabled",
-    Default  = Settings.KnifeAura.Enabled,
-    Risky    = true,
-    Callback = function(v)
-        Settings.KnifeAura.Enabled = v
-    end,
+KnifeR:AddToggle("KA_Headshot", {
+    Text    = "Headshot",
+    Default = Settings.KnifeAura.Headshot,
+    Callback = function(v) Settings.KnifeAura.Headshot = v end,
 })
 
-kaLeft:AddDivider()
-
-kaLeft:AddSlider("KA_Range", {
+KnifeR:AddSlider("KA_Range", {
     Text     = "Range",
     Default  = Settings.KnifeAura.Range,
     Min      = 1,
-    Max      = 10,
+    Max      = 100,
     Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(v)
-        Settings.KnifeAura.Range = v
-    end,
+    Callback = function(v) Settings.KnifeAura.Range = v end,
 })
 
-kaLeft:AddToggle("KA_Headshot", {
-    Text     = "Force Headshot",
-    Default  = Settings.KnifeAura.Headshot,
-    Callback = function(v)
-        Settings.KnifeAura.Headshot = v
-    end,
-})
-
-kaRight:AddSlider("KA_Delay", {
-    Text     = "Delay",
-    Default  = math.floor(Settings.KnifeAura.Delay * 1000),
-    Min      = 0,
-    Max      = 1000,
+KnifeR:AddSlider("KA_Delay", {
+    Text     = "Delay (s)",
+    Default  = Settings.KnifeAura.Delay * 100,
+    Min      = 1,
+    Max      = 100,
     Rounding = 0,
-    Suffix   = "ms",
-    Callback = function(v)
-        Settings.KnifeAura.Delay = v / 1000
-    end,
+    Callback = function(v) Settings.KnifeAura.Delay = v / 100 end,
 })
 
-kaRight:AddSlider("KA_AttackStage", {
+KnifeR:AddSlider("KA_Stage", {
     Text     = "Attack Stage",
     Default  = Settings.KnifeAura.AttackStage,
     Min      = 1,
     Max      = 3,
     Rounding = 0,
+    Callback = function(v) Settings.KnifeAura.AttackStage = v end,
+})
+
+local ChamsL  = Tabs.Visuals:AddLeftGroupbox("Chams",            "eye")
+local HitboxR = Tabs.Visuals:AddRightGroupbox("Hitbox Expander", "box")
+
+ChamsL:AddToggle("Chams_Enabled", {
+    Text    = "Chams",
+    Default = Settings.Chams.Enabled,
     Callback = function(v)
-        Settings.KnifeAura.AttackStage = v
+        Settings.Chams.Enabled = v
+        refreshAllChams()
     end,
 })
 
-local espLeft  = Tabs.ESP:AddLeftGroupbox("ESP",   "eye")
-local espRight = Tabs.ESP:AddRightGroupbox("Chams", "layers")
-
-espLeft:AddToggle("ESP_Enabled", {
-    Text     = "Enabled",
-    Default  = Settings.ESP.Enabled,
-    Risky    = true,
-    Callback = function(v)
-        Settings.ESP.Enabled = v
-    end,
-})
-
-espLeft:AddDivider()
-
---[[
-espLeft:AddToggle("ESP_Box", {
-    Text     = "Box",
-    Default  = Settings.ESP.Box,
-    Callback = function(v)
-        Settings.ESP.Box = v
-    end,
-})
-
-]]
-
---[[
-espLeft:AddToggle("ESP_Health", {
-    Text     = "Health Bar",
-    Default  = Settings.ESP.Health,
-    Callback = function(v)
-        Settings.ESP.Health = v
-    end,
-})
-]]
-
-espLeft:AddToggle("ESP_Tracers", {
-    Text     = "Tracers",
-    Default  = Settings.ESP.Tracers,
-    Callback = function(v)
-        Settings.ESP.Tracers = v
-    end,
-})
-
-espLeft:AddToggle("ESP_HeadDot", {
-    Text     = "Head Dot",
-    Default  = Settings.ESP.HeadDot,
-    Callback = function(v)
-        Settings.ESP.HeadDot = v
-    end,
-})
-
-espLeft:AddToggle("ESP_Name", {
-    Text     = "Name",
-    Default  = Settings.ESP.Name,
-    Callback = function(v)
-        Settings.ESP.Name = v
-    end,
-})
---[[
-
-espRight:AddLabel("Box Color"):AddColorPicker("ESP_BoxColor", {
-    Default  = Settings.ESP.BoxColor,
-    Callback = function(v)
-        Settings.ESP.BoxColor = v
-        for _, drawings in pairs(espDrawings) do
-            if drawings.Box then
-                drawings.Box.Color = v
-            end
+ChamsL:AddLabel("Fill Color"):AddColorPicker("Chams_Fill", {
+    Default      = Settings.Chams.FillColor,
+    Transparency = Settings.Chams.FillTransparency,
+    Title        = "Fill",
+    Callback     = function(c)
+        Settings.Chams.FillColor = c
+        for _, h in pairs(chamsTable) do
+            if h and h.Parent then h.FillColor = c end
         end
     end,
 })
-]]
 
-
-espRight:AddToggle("CH_Enabled", {
-    Text     = "Enabled",
-    Default  = Settings.Chams.Enabled,
-    Callback = function(v)
-        Settings.Chams.Enabled = v
+ChamsL:AddLabel("Outline Color"):AddColorPicker("Chams_Outline", {
+    Default      = Settings.Chams.OutlineColor,
+    Transparency = Settings.Chams.OutlineTransparency,
+    Title        = "Outline",
+    Callback     = function(c)
+        Settings.Chams.OutlineColor = c
+        for _, h in pairs(chamsTable) do
+            if h and h.Parent then h.OutlineColor = c end
+        end
     end,
 })
 
-espRight:AddDivider()
-
-espRight:AddSlider("CH_FillTrans", {
+ChamsL:AddSlider("Chams_FillTrans", {
     Text     = "Fill Transparency",
-    Default  = math.floor(Settings.Chams.FillTransparency * 100),
+    Default  = Settings.Chams.FillTransparency * 100,
     Min      = 0,
     Max      = 100,
     Rounding = 0,
-    Suffix   = "%",
     Callback = function(v)
         Settings.Chams.FillTransparency = v / 100
+        for _, h in pairs(chamsTable) do
+            if h and h.Parent then h.FillTransparency = v / 100 end
+        end
     end,
 })
 
-espRight:AddSlider("CH_OutlineTrans", {
-    Text     = "Outline Transparency",
-    Default  = math.floor(Settings.Chams.OutlineTransparency * 100),
-    Min      = 0,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = "%",
+HitboxR:AddToggle("HB_Enabled", {
+    Text    = "Hitbox Expander",
+    Default = Settings.Hitbox.Enabled,
+    Risky   = true,
     Callback = function(v)
-        Settings.Chams.OutlineTransparency = v / 100
+        Settings.Hitbox.Enabled = v
+        refreshAllHitboxes()
     end,
 })
 
-espRight:AddLabel("Fill Color"):AddColorPicker("CH_FillColor", {
-    Default  = Settings.Chams.Color,
+HitboxR:AddSlider("HB_Size", {
+    Text     = "Hitbox Size",
+    Default  = Settings.Hitbox.Size,
+    Min      = 1,
+    Max      = 5,
+    Rounding = 1,
     Callback = function(v)
-        Settings.Chams.Color = v
+        Settings.Hitbox.Size = v
+        if Settings.Hitbox.Enabled then refreshAllHitboxes() end
     end,
 })
 
-espRight:AddLabel("Outline Color"):AddColorPicker("CH_OutlineColor", {
-    Default  = Settings.Chams.OutlineColor,
-    Callback = function(v)
-        Settings.Chams.OutlineColor = v
-    end,
+-- ─────────────────────────────────────────────────────────────────
+local MovL = Tabs.Movement:AddLeftGroupbox("Speed / Jump", "zap")
+local MovR = Tabs.Movement:AddRightGroupbox("Misc", "cog")
+
+-- Safe movement apply: ignores empty/nil/out-of-range input entirely
+local function applyMovement(field, raw, min, max)
+    if not raw or raw == "" then return end          
+    local n = tonumber(raw)
+    if not n then return end                          
+    n = math.floor(n)
+    if n < min or n > max then return end           
+    Settings.Movement[field] = n
+    patchConfigTablesInGC()
+    patchAllUpvaluesInGC()
+end
+local function applyMisc(field, raw, min, max)
+    if not raw or raw == "" then return end         
+    local n = tonumber(raw)
+    if not n then return end                         
+    n = math.floor(n)
+    if n < min or n > max then return end           
+    Settings.Misc[field] = n
+    patchConfigTablesInGC()
+    patchAllUpvaluesInGC()
+end
+
+MovL:AddInput("Mov_Walk", {
+    Text             = "Walk Speed",
+    Default          = tostring(Settings.Movement.WalkSpeed),
+    Numeric          = true,
+    Finished         = true,   -- only fires on Enter, not every keystroke
+    ClearTextOnFocus = false,
+    Placeholder      = "16 – 50",
+    Callback = function(v) applyMovement("WalkSpeed",   v, 16, 50) end,
 })
 
-local menuGroup = Tabs.UISettings:AddLeftGroupbox("Menu", "wrench")
+MovL:AddInput("Mov_Sprint", {
+    Text             = "Sprint Speed",
+    Default          = tostring(Settings.Movement.SprintSpeed),
+    Numeric          = true,
+    Finished         = true,
+    ClearTextOnFocus = false,
+    Placeholder      = "26 – 150",
+    Callback = function(v) applyMovement("SprintSpeed", v, 26, 150) end,
+})
+
+MovL:AddInput("Mov_Jump", {
+    Text             = "Jump Height",
+    Default          = tostring(Settings.Movement.JumpHeight),
+    Numeric          = true,
+    Finished         = true,
+    ClearTextOnFocus = false,
+    Placeholder      = "10 – 100",
+    Callback = function(v) applyMovement("JumpHeight",  v,  4,  100) end,
+})
+
+MovR:AddInput("Misc_Stab", {
+    Text             = "Stab Cooldown",
+    Default          = tostring(Settings.Misc.StabCooldown),
+    Numeric          = true,
+    Finished         = true,
+    ClearTextOnFocus = false,
+    Placeholder      = "0 – 1",
+    Callback = function(v) applyMisc("StabCooldown",  v,  0, 1) end,
+})
+
+MovR:AddInput("Misc_Throw", {
+    Text             = "Throw Cooldown",
+    Default          = tostring(Settings.Misc.ThrowCooldown),
+    Numeric          = true,
+    Finished         = true,
+    ClearTextOnFocus = false,
+    Placeholder      = "0 – 1",
+    Callback = function(v) applyMisc("ThrowCooldown",  v,  0, 1) end,
+})
+
+local menuGroup = Tabs.Settings:AddLeftGroupbox("Menu", "wrench")
 
 menuGroup:AddToggle("UI_Cursor", {
     Text     = "Custom Cursor",
@@ -811,14 +761,14 @@ menuGroup:AddDropdown("UI_NotifSide", {
 })
 
 menuGroup:AddDropdown("DPIDropdown", {
-	Values = { "50%", "75%", "100%", "125%", "150%", "175%", "200%" },
-	Default = "100%",
-	Text = "DPI Scale",
-	Callback = function(Value)
-		Value = Value:gsub("%%", "")
-		local DPI = tonumber(Value)
-		Library:SetDPIScale(DPI)
-	end,
+    Values   = { "50%", "75%", "100%", "125%", "150%", "175%", "200%" },
+    Default  = "100%",
+    Text     = "DPI Scale",
+    Callback = function(Value)
+        Value = Value:gsub("%%", "")
+        local DPI = tonumber(Value)
+        Library:SetDPIScale(DPI)
+    end,
 })
 
 menuGroup:AddDivider()
@@ -839,19 +789,14 @@ menuGroup:AddButton({
 Library.ToggleKeybind = Options.MenuKeybind
 
 Library:OnUnload(function()
-    Settings.SilentAim.Enabled = false
-    Settings.AimAssist.Enabled = false
-    Settings.KnifeAura.Enabled = false
-    Settings.ESP.Enabled       = false
-    Settings.Chams.Enabled     = false
-    if fovCircleDrawing then
-        fovCircleDrawing:Remove()
-    end
-    if fovCircleGui then
-        fovCircleGui:Destroy()
-    end
-    for player in pairs(espDrawings) do clearESP(player) end
-    for player in pairs(chamsCache)  do clearChams(player) end
+    Settings.SilentAim.Enabled    = false
+    Settings.AimAssist.Enabled    = false
+    Settings.Hitbox.Enabled       = false
+    Settings.KnifeAura.Enabled    = false
+    Settings.Chams.Enabled        = false
+    Settings.Movement.WalkSpeed   = 16
+    Settings.Movement.SprintSpeed = 26
+    Settings.Movement.JumpHeight  = 10
 end)
 
 ThemeManager:SetLibrary(Library)
@@ -860,8 +805,8 @@ SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 ThemeManager:SetFolder("Theme")
 SaveManager:SetFolder("ASTRO/configs")
-ThemeManager:ApplyToTab(Tabs.UISettings)
-SaveManager:BuildConfigSection(Tabs.UISettings)
+ThemeManager:ApplyToTab(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
 SaveManager:LoadAutoloadConfig()
 
 Library:Notify({
