@@ -1,4 +1,3 @@
--- https://lua.expert/
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local t = {}
