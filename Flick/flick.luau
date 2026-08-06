@@ -1,4 +1,3 @@
-
 local repo         = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
@@ -8,21 +7,28 @@ local Options = Library.Options
 local Toggles = Library.Toggles
 
 local cfg = {
-    silentAim   = true,
+    silentAim   = false,
     fovSize     = 150,
     maxDistance = 500,
 
-    espEnabled       = true,
-    tracerEnabled    = true,
-    distanceEnabled  = true,
-    highlightEnabled = true,
+    espEnabled       = false,
+    tracerEnabled    = false,
+    distanceEnabled  = false,
+    highlightEnabled = false,
     boxEnabled       = false,
-    cornerBoxEnabled = true,
-    healthBarEnabled = true,
-    headDotEnabled   = true,
+    cornerBoxEnabled = false,
+    healthBarEnabled = false,
+    headDotEnabled   = false,
 
-    fovCircleVisible = true,
-    espColor = Color3.fromRGB(255, 105, 180),
+    fovCircleVisible = false,
+
+    fovColor       = Color3.fromRGB(86, 245, 0),
+    tracerColor    = Color3.fromRGB(255, 105, 180),
+    boxColor       = Color3.fromRGB(255, 255, 255),
+    cornerColor    = Color3.fromRGB(255, 105, 180),
+    headDotColor   = Color3.fromRGB(255, 105, 180),
+    distanceColor  = Color3.fromRGB(255, 255, 255),
+    highlightColor = Color3.fromRGB(255, 105, 180),
 }
 
 local Players       = game:GetService("Players")
@@ -49,33 +55,33 @@ local function createESP(player)
     if player == LocalPlayer then return end
 
     local tracer      = Drawing.new("Line")
-    tracer.Color      = cfg.espColor
+    tracer.Color      = cfg.tracerColor
     tracer.Thickness  = 1
 
     local distanceText = drawingWorks and Drawing.new("Text") or nil
     if distanceText then
-        distanceText.Color   = cfg.espColor
+        distanceText.Color   = cfg.distanceColor
         distanceText.Size    = 13
         distanceText.Center  = true
         distanceText.Outline = true
     end
 
     local highlight = Instance.new("Highlight")
-    highlight.FillColor           = cfg.espColor
-    highlight.OutlineColor        = cfg.espColor
+    highlight.FillColor           = cfg.highlightColor
+    highlight.OutlineColor        = cfg.highlightColor
     highlight.FillTransparency    = 0.8
     highlight.OutlineTransparency = 0
     highlight.Parent              = game:GetService("CoreGui")
 
     local box      = Drawing.new("Square")
-    box.Color      = cfg.espColor
+    box.Color      = cfg.boxColor
     box.Thickness  = 1
     box.Filled     = false
 
     local corners = {}
     for i = 1, 8 do
         corners[i]           = Drawing.new("Line")
-        corners[i].Color     = cfg.espColor
+        corners[i].Color     = cfg.cornerColor
         corners[i].Thickness = 1.5
     end
 
@@ -87,7 +93,7 @@ local function createESP(player)
     healthFill.Filled = true
 
     local headDot      = Drawing.new("Circle")
-    headDot.Color      = cfg.espColor
+    headDot.Color      = cfg.headDotColor
     headDot.Filled     = true
     headDot.Radius     = 3
     headDot.NumSides   = 16
@@ -216,7 +222,7 @@ Players.PlayerAdded:Connect(createESP)
 
 local fovCircle = drawingWorks and (function()
     local circle        = Drawing.new("Circle")
-    circle.Color        = cfg.espColor
+    circle.Color        = cfg.fovColor
     circle.Thickness    = 1
     circle.Transparency = 1
     circle.Radius       = cfg.fovSize
@@ -330,8 +336,7 @@ AimBox:AddToggle("FovCircle", {
     Text    = "FOV Circle",
     Default = cfg.fovCircleVisible,
     Tooltip = "Draw the FOV radius circle on screen",
-})
-
+}):AddColorPicker("FovColor", { Default = cfg.fovColor, Title = "FOV Circle Color" })
 local EspBox = Tabs.Visual:AddLeftGroupbox("ESP", "eye")
 
 EspBox:AddToggle("EspEnabled", {
@@ -346,20 +351,17 @@ EspBox:AddToggle("TracerEnabled", {
     Text    = "Tracers",
     Default = cfg.tracerEnabled,
     Tooltip = "Line from top-center of screen to enemy head",
-})
-
+}):AddColorPicker("TracerColor", { Default = cfg.tracerColor, Title = "Tracer Color" })
 EspBox:AddToggle("BoxEnabled", {
     Text    = "Box",
     Default = cfg.boxEnabled,
     Tooltip = "Full 2D bounding box around enemy",
-})
-
+}):AddColorPicker("BoxColor", { Default = cfg.boxColor, Title = "Box Color" })
 EspBox:AddToggle("CornerBoxEnabled", {
     Text    = "Corner Box",
     Default = cfg.cornerBoxEnabled,
     Tooltip = "Corner-style bounding box around enemy",
-})
-
+}):AddColorPicker("CornerColor", { Default = cfg.cornerColor, Title = "Corner Color" })
 EspBox:AddToggle("HealthBarEnabled", {
     Text    = "Health Bar",
     Default = cfg.healthBarEnabled,
@@ -370,29 +372,17 @@ EspBox:AddToggle("HeadDotEnabled", {
     Text    = "Head Dot",
     Default = cfg.headDotEnabled,
     Tooltip = "Filled dot at the enemy head position",
-})
-
+}):AddColorPicker("HeadDotColor", { Default = cfg.headDotColor, Title = "Head Dot Color" })
 EspBox:AddToggle("DistanceEnabled", {
     Text    = "Distance",
     Default = cfg.distanceEnabled,
     Tooltip = "Distance label below the enemy's feet",
-})
-
+}):AddColorPicker("DistanceColor", { Default = cfg.distanceColor, Title = "Distance Color" })
 EspBox:AddToggle("HighlightEnabled", {
     Text    = "Chams",
     Default = cfg.highlightEnabled,
     Tooltip = "Highlight / glow on enemy models",
-})
-
-EspBox:AddDivider()
-
-EspBox:AddLabel("Color")
-    :AddColorPicker("EspColor", {
-        Default = cfg.espColor,
-        Title   = "ESP & FOV Color",
-    })
-
-
+}):AddColorPicker("HighlightColor", { Default = cfg.highlightColor, Title = "Chams Color" })
 Toggles.SilentAim:OnChanged(function()
     cfg.silentAim = Toggles.SilentAim.Value
 end)
@@ -409,6 +399,11 @@ Toggles.FovCircle:OnChanged(function()
     cfg.fovCircleVisible = Toggles.FovCircle.Value
 end)
 
+Options.FovColor:OnChanged(function()
+    cfg.fovColor = Options.FovColor.Value
+    if fovCircle then fovCircle.Color = cfg.fovColor end
+end)
+
 Toggles.EspEnabled:OnChanged(function()
     cfg.espEnabled = Toggles.EspEnabled.Value
 end)
@@ -417,12 +412,35 @@ Toggles.TracerEnabled:OnChanged(function()
     cfg.tracerEnabled = Toggles.TracerEnabled.Value
 end)
 
+Options.TracerColor:OnChanged(function()
+    cfg.tracerColor = Options.TracerColor.Value
+    for _, esp in pairs(activeESP) do
+        if esp.tracer then esp.tracer.Color = cfg.tracerColor end
+    end
+end)
+
 Toggles.BoxEnabled:OnChanged(function()
     cfg.boxEnabled = Toggles.BoxEnabled.Value
 end)
 
+Options.BoxColor:OnChanged(function()
+    cfg.boxColor = Options.BoxColor.Value
+    for _, esp in pairs(activeESP) do
+        if esp.box then esp.box.Color = cfg.boxColor end
+    end
+end)
+
 Toggles.CornerBoxEnabled:OnChanged(function()
     cfg.cornerBoxEnabled = Toggles.CornerBoxEnabled.Value
+end)
+
+Options.CornerColor:OnChanged(function()
+    cfg.cornerColor = Options.CornerColor.Value
+    for _, esp in pairs(activeESP) do
+        if esp.corners then
+            for i = 1, 8 do esp.corners[i].Color = cfg.cornerColor end
+        end
+    end
 end)
 
 Toggles.HealthBarEnabled:OnChanged(function()
@@ -433,28 +451,34 @@ Toggles.HeadDotEnabled:OnChanged(function()
     cfg.headDotEnabled = Toggles.HeadDotEnabled.Value
 end)
 
+Options.HeadDotColor:OnChanged(function()
+    cfg.headDotColor = Options.HeadDotColor.Value
+    for _, esp in pairs(activeESP) do
+        if esp.headDot then esp.headDot.Color = cfg.headDotColor end
+    end
+end)
+
 Toggles.DistanceEnabled:OnChanged(function()
     cfg.distanceEnabled = Toggles.DistanceEnabled.Value
+end)
+
+Options.DistanceColor:OnChanged(function()
+    cfg.distanceColor = Options.DistanceColor.Value
+    for _, esp in pairs(activeESP) do
+        if esp.distanceText then esp.distanceText.Color = cfg.distanceColor end
+    end
 end)
 
 Toggles.HighlightEnabled:OnChanged(function()
     cfg.highlightEnabled = Toggles.HighlightEnabled.Value
 end)
 
-Options.EspColor:OnChanged(function()
-    cfg.espColor = Options.EspColor.Value
-    if fovCircle then fovCircle.Color = cfg.espColor end
+Options.HighlightColor:OnChanged(function()
+    cfg.highlightColor = Options.HighlightColor.Value
     for _, esp in pairs(activeESP) do
-        if esp.tracer       then esp.tracer.Color           = cfg.espColor end
-        if esp.distanceText then esp.distanceText.Color     = cfg.espColor end
-        if esp.highlight    then
-            esp.highlight.FillColor    = cfg.espColor
-            esp.highlight.OutlineColor = cfg.espColor
-        end
-        if esp.box     then esp.box.Color     = cfg.espColor end
-        if esp.headDot then esp.headDot.Color = cfg.espColor end
-        if esp.corners then
-            for i = 1, 8 do esp.corners[i].Color = cfg.espColor end
+        if esp.highlight then
+            esp.highlight.FillColor = cfg.highlightColor
+            esp.highlight.OutlineColor = cfg.highlightColor
         end
     end
 end)
