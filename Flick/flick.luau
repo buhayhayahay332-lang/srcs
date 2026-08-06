@@ -1,5 +1,4 @@
 
--- ── 1. Obsidian ───────────────────────────────────────────────────────────────
 local repo         = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
@@ -8,7 +7,6 @@ local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))(
 local Options = Library.Options
 local Toggles = Library.Toggles
 
--- ── 2. Runtime config ─────────────────────────────────────────────────────────
 local cfg = {
     silentAim   = true,
     fovSize     = 150,
@@ -27,7 +25,6 @@ local cfg = {
     espColor = Color3.fromRGB(255, 105, 180),
 }
 
--- ── 3. Services / globals ─────────────────────────────────────────────────────
 local Players       = game:GetService("Players")
 local RunService    = game:GetService("RunService")
 local Camera        = workspace.CurrentCamera
@@ -37,7 +34,6 @@ local oldFire       = BulletHandler.Fire
 
 local drawingWorks = pcall(function() return Drawing.new("Line") end)
 
--- ── 4. Helper — dynamic health colour ────────────────────────────────────────
 local function getHealthColor(ratio)
     ratio = math.clamp(ratio, 0, 1)
     if ratio > 0.5 then
@@ -47,19 +43,15 @@ local function getHealthColor(ratio)
     end
 end
 
--- ── 5. Active ESP table (for live colour updates) ─────────────────────────────
 local activeESP = {}
 
--- ── 6. ESP ────────────────────────────────────────────────────────────────────
 local function createESP(player)
     if player == LocalPlayer then return end
 
-    -- tracer
     local tracer      = Drawing.new("Line")
     tracer.Color      = cfg.espColor
     tracer.Thickness  = 1
 
-    -- distance text
     local distanceText = drawingWorks and Drawing.new("Text") or nil
     if distanceText then
         distanceText.Color   = cfg.espColor
@@ -68,7 +60,6 @@ local function createESP(player)
         distanceText.Outline = true
     end
 
-    -- highlight / chams
     local highlight = Instance.new("Highlight")
     highlight.FillColor           = cfg.espColor
     highlight.OutlineColor        = cfg.espColor
@@ -76,13 +67,11 @@ local function createESP(player)
     highlight.OutlineTransparency = 0
     highlight.Parent              = game:GetService("CoreGui")
 
-    -- 2D box
     local box      = Drawing.new("Square")
     box.Color      = cfg.espColor
     box.Thickness  = 1
     box.Filled     = false
 
-    -- corner box — 8 lines (2 per corner)
     local corners = {}
     for i = 1, 8 do
         corners[i]           = Drawing.new("Line")
@@ -90,7 +79,6 @@ local function createESP(player)
         corners[i].Thickness = 1.5
     end
 
-    -- health bar — dark bg + coloured fill
     local healthBg    = Drawing.new("Square")
     healthBg.Color    = Color3.fromRGB(0, 0, 0)
     healthBg.Filled   = true
@@ -98,7 +86,6 @@ local function createESP(player)
     local healthFill  = Drawing.new("Square")
     healthFill.Filled = true
 
-    -- head dot
     local headDot      = Drawing.new("Circle")
     headDot.Color      = cfg.espColor
     headDot.Filled     = true
@@ -171,53 +158,42 @@ local function createESP(player)
             return
         end
 
-        -- ── box geometry ──────────────────────────────────────────────────────
         local boxH = math.max(feetPos.Y - headPos.Y, 1)
         local boxW = boxH * 0.55
         local boxX = headPos.X - boxW / 2
         local boxY = headPos.Y
 
-        -- ── tracer: top-center of screen → enemy head ─────────────────────────
         tracer.From    = Vector2.new(Camera.ViewportSize.X / 2, 0)
         tracer.To      = Vector2.new(headPos.X, headPos.Y)
         tracer.Visible = cfg.espEnabled and cfg.tracerEnabled
 
-        -- ── distance text: below feet ─────────────────────────────────────────
         if distanceText then
             distanceText.Text     = math.floor(distance) .. " studs"
             distanceText.Position = Vector2.new(feetPos.X, feetPos.Y + 4)
             distanceText.Visible  = cfg.espEnabled and cfg.distanceEnabled
         end
 
-        -- ── chams ─────────────────────────────────────────────────────────────
         highlight.Adornee = character
         highlight.Enabled = cfg.espEnabled and cfg.highlightEnabled
 
-        -- ── 2D box ────────────────────────────────────────────────────────────
         box.Position = Vector2.new(boxX, boxY)
         box.Size     = Vector2.new(boxW, boxH)
         box.Visible  = cfg.espEnabled and cfg.boxEnabled
 
-        -- ── corner box ────────────────────────────────────────────────────────
         local cLen = math.min(boxW, boxH) * 0.25
         local cVis = cfg.espEnabled and cfg.cornerBoxEnabled
 
-        -- top-left
         corners[1].From = Vector2.new(boxX,        boxY);        corners[1].To = Vector2.new(boxX + cLen,        boxY)
         corners[2].From = Vector2.new(boxX,        boxY);        corners[2].To = Vector2.new(boxX,               boxY + cLen)
-        -- top-right
         corners[3].From = Vector2.new(boxX + boxW, boxY);        corners[3].To = Vector2.new(boxX + boxW - cLen, boxY)
         corners[4].From = Vector2.new(boxX + boxW, boxY);        corners[4].To = Vector2.new(boxX + boxW,        boxY + cLen)
-        -- bottom-left
         corners[5].From = Vector2.new(boxX,        boxY + boxH); corners[5].To = Vector2.new(boxX + cLen,        boxY + boxH)
         corners[6].From = Vector2.new(boxX,        boxY + boxH); corners[6].To = Vector2.new(boxX,               boxY + boxH - cLen)
-        -- bottom-right
         corners[7].From = Vector2.new(boxX + boxW, boxY + boxH); corners[7].To = Vector2.new(boxX + boxW - cLen, boxY + boxH)
         corners[8].From = Vector2.new(boxX + boxW, boxY + boxH); corners[8].To = Vector2.new(boxX + boxW,        boxY + boxH - cLen)
 
         for i = 1, 8 do corners[i].Visible = cVis end
 
-        -- ── health bar (left of box) ──────────────────────────────────────────
         local hpRatio = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
         local barX    = boxX - 6
 
@@ -230,7 +206,6 @@ local function createESP(player)
         healthFill.Size     = Vector2.new(3, math.max(boxH * hpRatio, 1))
         healthFill.Visible  = cfg.espEnabled and cfg.healthBarEnabled
 
-        -- ── head dot ──────────────────────────────────────────────────────────
         headDot.Position = Vector2.new(headPos.X, headPos.Y)
         headDot.Visible  = cfg.espEnabled and cfg.headDotEnabled
     end)
@@ -239,7 +214,6 @@ end
 for _, player in ipairs(Players:GetPlayers()) do createESP(player) end
 Players.PlayerAdded:Connect(createESP)
 
--- ── 7. FOV circle ─────────────────────────────────────────────────────────────
 local fovCircle = drawingWorks and (function()
     local circle        = Drawing.new("Circle")
     circle.Color        = cfg.espColor
@@ -260,7 +234,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ── 8. Silent aim ─────────────────────────────────────────────────────────────
 local lockedHead = nil
 
 local function getClosestHead()
@@ -309,7 +282,6 @@ BulletHandler.Fire = function(p6)
     return oldFire(p6)
 end
 
--- ── 9. Window ─────────────────────────────────────────────────────────────────
 local Window = Library:CreateWindow({
     Title            = "Furry Flick",
     Icon             = 13129527031,
@@ -326,7 +298,6 @@ local Tabs = {
     ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 }
 
--- ── 10. Main tab — Silent Aim ─────────────────────────────────────────────────
 local AimBox = Tabs.Main:AddLeftGroupbox("Silent Aim", "crosshair")
 
 AimBox:AddToggle("SilentAim", {
@@ -361,7 +332,6 @@ AimBox:AddToggle("FovCircle", {
     Tooltip = "Draw the FOV radius circle on screen",
 })
 
--- ── 11. Visual tab — ESP ──────────────────────────────────────────────────────
 local EspBox = Tabs.Visual:AddLeftGroupbox("ESP", "eye")
 
 EspBox:AddToggle("EspEnabled", {
@@ -422,7 +392,6 @@ EspBox:AddLabel("Color")
         Title   = "ESP & FOV Color",
     })
 
--- ── 12. :OnChanged() ──────────────────────────────────────────────────────────
 
 Toggles.SilentAim:OnChanged(function()
     cfg.silentAim = Toggles.SilentAim.Value
@@ -490,7 +459,6 @@ Options.EspColor:OnChanged(function()
     end
 end)
 
--- ── 13. UI Settings tab ───────────────────────────────────────────────────────
 local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu", "wrench")
 
 MenuGroup:AddToggle("KeybindMenuOpen", {
@@ -539,7 +507,6 @@ end)
 
 Library.ToggleKeybind = Options.MenuKeybind
 
--- ── 14. Addons ────────────────────────────────────────────────────────────────
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 
@@ -547,7 +514,7 @@ SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 
 ThemeManager:SetFolder("Flick")
-SaveManager:SetFolder("Flick/configs")
+SaveManager:SetFolder("ASTROFLICK/configs")
 
 SaveManager:BuildConfigSection(Tabs["UI Settings"])
 ThemeManager:ApplyToTab(Tabs["UI Settings"])
