@@ -11,6 +11,17 @@ local cfg = {
     fovSize     = 150,
     maxDistance = 500,
 
+    fastReload = false,
+    reloadSpeed = 0.1,
+
+    rapidFire = false,
+    fireRate = 0.05,
+
+    noRecoil = false,
+    autoFire = false,
+    instantEquip = false,
+    noGravity = false,
+
     espEnabled       = false,
     tracerEnabled    = false,
     distanceEnabled  = false,
@@ -37,6 +48,148 @@ local Camera        = workspace.CurrentCamera
 local LocalPlayer   = Players.LocalPlayer
 local BulletHandler = require(game:GetService("ReplicatedStorage").ModuleScripts.GunModules.BulletHandler)
 local oldFire       = BulletHandler.Fire
+
+local GunMods = {
+    reloadTime = { Enabled = "fastReload",   Value = "reloadSpeed" },
+    FireRate   = { Enabled = "rapidFire",    Value = "fireRate" },
+    Recoil     = { Enabled = "noRecoil",     Static = Vector3.new(0, 0, 0) },
+    isAuto     = { Enabled = "autoFire",     Static = true },
+    EquipTime  = { Enabled = "instantEquip", Static = 0 },
+    Gravity    = { Enabled = "noGravity",    Static = 0 },
+}
+
+local function applyGunMods(inst)
+    if not inst:IsA("Tool") then return end
+
+    for key, mod in pairs(GunMods) do
+        local origKey = "__FlickOrig_" .. key
+
+        if inst:GetAttribute(origKey) == nil and inst:GetAttribute(key) ~= nil then
+            inst:SetAttribute(origKey, inst:GetAttribute(key))
+        end
+
+        if cfg[mod.Enabled] then
+            inst:SetAttribute(key, mod.Static or cfg[mod.Value])
+        else
+            local orig = inst:GetAttribute(origKey)
+            if orig ~= nil then
+                inst:SetAttribute(key, orig)
+            end
+        end
+    end
+end
+
+local function isFrameworkConfig(t)
+    return type(t) == "table"
+        and type(rawget(t, "reloadTime")) == "number"
+        and (rawget(t, "Ammo") ~= nil or rawget(t, "FireRate") ~= nil or rawget(t, "spread") ~= nil)
+end
+
+local function patchConfig(t)
+    if not isFrameworkConfig(t) then return end
+
+    for key, mod in pairs(GunMods) do
+        if rawget(t, key) == nil then
+            continue
+        end
+
+        local origKey = "__FlickOrig_" .. key
+
+        if rawget(t, origKey) == nil then
+            rawset(t, origKey, t[key])
+        end
+
+        if cfg[mod.Enabled] then
+            rawset(t, key, mod.Static or cfg[mod.Value])
+        else
+            rawset(t, key, rawget(t, origKey))
+        end
+    end
+end
+
+local function patchFrameworkConfig()
+    local patched = false
+
+    if filtergc then
+        local ok = pcall(function()
+            local r = filtergc("table", false, isFrameworkConfig)
+
+            if type(r) == "table" then
+                for _, t in ipairs(r) do
+                    if isFrameworkConfig(t) then
+                        patchConfig(t)
+                        patched = true
+                    end
+                end
+            end
+        end)
+
+        if not ok or not patched then
+            pcall(function()
+                local r = filtergc("table", isFrameworkConfig)
+
+                if type(r) == "table" then
+                    for _, t in ipairs(r) do
+                        if isFrameworkConfig(t) then
+                            patchConfig(t)
+                            patched = true
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    if not patched and getgc then
+        for _, obj in ipairs(getgc(true)) do
+            if isFrameworkConfig(obj) then
+                patchConfig(obj)
+            end
+        end
+    end
+end
+
+local function updateEquippedGun()
+    if LocalPlayer.Character then
+        for _, item in ipairs(LocalPlayer.Character:GetChildren()) do
+            applyGunMods(item)
+        end
+    end
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            applyGunMods(item)
+        end
+    end
+    patchFrameworkConfig()
+end
+
+local function watchContainer(container)
+    if not container then return end
+    container.ChildAdded:Connect(applyGunMods)
+    for _, item in ipairs(container:GetChildren()) do
+        applyGunMods(item)
+    end
+end
+
+local function watchPlayer(player)
+    if player.Character then
+        watchContainer(player.Character)
+    end
+    player.CharacterAdded:Connect(watchContainer)
+
+    local backpack = player:FindFirstChildOfClass("Backpack")
+    if backpack then
+        watchContainer(backpack)
+    end
+    player.ChildAdded:Connect(function(child)
+        if child:IsA("Backpack") then
+            watchContainer(child)
+        end
+    end)
+end
+
+watchPlayer(LocalPlayer)
 
 local drawingWorks = pcall(function() return Drawing.new("Line") end)
 
@@ -337,6 +490,64 @@ AimBox:AddToggle("FovCircle", {
     Default = cfg.fovCircleVisible,
     Tooltip = "Draw the FOV radius circle on screen",
 }):AddColorPicker("FovColor", { Default = cfg.fovColor, Title = "FOV Circle Color" })
+
+local GunBox = Tabs.Main:AddRightGroupbox("Gun Mods", "zap")
+
+GunBox:AddToggle("FastReload", {
+    Text    = "Fast Reload",
+    Default = cfg.fastReload,
+    Tooltip = "Overrides weapon reload duration",
+})
+
+GunBox:AddSlider("ReloadSpeed", {
+    Text     = "Reload Time",
+    Default  = cfg.reloadSpeed,
+    Min      = 0,
+    Max      = 3,
+    Rounding = 2,
+    Suffix   = "s",
+    Tooltip  = "Set target reload duration in seconds",
+})
+
+GunBox:AddToggle("RapidFire", {
+    Text    = "Rapid Fire",
+    Default = cfg.rapidFire,
+    Tooltip = "Overrides weapon fire rate",
+})
+
+GunBox:AddSlider("FireRate", {
+    Text     = "Fire Rate",
+    Default  = cfg.fireRate,
+    Min      = 0.01,
+    Max      = 0.5,
+    Rounding = 2,
+    Suffix   = "s",
+    Tooltip  = "Seconds between shots (lower = faster)",
+})
+
+GunBox:AddToggle("NoRecoil", {
+    Text    = "No Recoil",
+    Default = cfg.noRecoil,
+    Tooltip = "Removes camera kick and viewmodel recoil",
+})
+
+GunBox:AddToggle("AutoFire", {
+    Text    = "Auto Fire",
+    Default = cfg.autoFire,
+    Tooltip = "Forces all guns to be full-auto",
+})
+
+GunBox:AddToggle("InstantEquip", {
+    Text    = "Instant Equip",
+    Default = cfg.instantEquip,
+    Tooltip = "Removes weapon equip/switching time",
+})
+
+GunBox:AddToggle("NoGravity", {
+    Text    = "No Bullet Gravity",
+    Default = cfg.noGravity,
+    Tooltip = "Bullets fly in a flat line",
+})
 local EspBox = Tabs.Visual:AddLeftGroupbox("ESP", "eye")
 
 EspBox:AddToggle("EspEnabled", {
@@ -385,6 +596,46 @@ EspBox:AddToggle("HighlightEnabled", {
 }):AddColorPicker("HighlightColor", { Default = cfg.highlightColor, Title = "Chams Color" })
 Toggles.SilentAim:OnChanged(function()
     cfg.silentAim = Toggles.SilentAim.Value
+end)
+
+Toggles.FastReload:OnChanged(function()
+    cfg.fastReload = Toggles.FastReload.Value
+    updateEquippedGun()
+end)
+
+Options.ReloadSpeed:OnChanged(function()
+    cfg.reloadSpeed = Options.ReloadSpeed.Value
+    updateEquippedGun()
+end)
+
+Toggles.RapidFire:OnChanged(function()
+    cfg.rapidFire = Toggles.RapidFire.Value
+    updateEquippedGun()
+end)
+
+Options.FireRate:OnChanged(function()
+    cfg.fireRate = Options.FireRate.Value
+    updateEquippedGun()
+end)
+
+Toggles.NoRecoil:OnChanged(function()
+    cfg.noRecoil = Toggles.NoRecoil.Value
+    updateEquippedGun()
+end)
+
+Toggles.AutoFire:OnChanged(function()
+    cfg.autoFire = Toggles.AutoFire.Value
+    updateEquippedGun()
+end)
+
+Toggles.InstantEquip:OnChanged(function()
+    cfg.instantEquip = Toggles.InstantEquip.Value
+    updateEquippedGun()
+end)
+
+Toggles.NoGravity:OnChanged(function()
+    cfg.noGravity = Toggles.NoGravity.Value
+    updateEquippedGun()
 end)
 
 Options.FovSize:OnChanged(function()
