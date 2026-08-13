@@ -1,0 +1,35 @@
+--!strict
+type TestEntry = { name: string, run: () -> () }
+type DMethods = { [number]: string }
+local D: debug = debug
+local P: typeof(pcall) = pcall
+local T: typeof(type) = type
+local A: typeof(assert) = assert
+local I: typeof(ipairs) = ipairs
+
+local M: DMethods = {
+    "getcallstack", "getconstant", "getconstants", "getinfo",
+    "getproto", "getprotos", "getregistry", "getsafeenv",
+    "getstack", "getupvalue", "getupvalues", "isvalidlevel",
+    "setconstant", "setinfo", "setname", "setsafeenv", "setstack",
+}
+
+local tests: { TestEntry } = {
+    { name = "debug.getinfo", run = function() local info = D.getinfo(1); A(info ~= nil) end },
+    { name = "debug.getupvalue", run = function() local x = 1; local function fn() return x end; local name, val = D.getupvalue(fn, 1); A(name ~= nil) end },
+    { name = "debug.getupvalues", run = function() local x = 1; local function fn() return x end; local t = D.getupvalues(fn); A(T(t) == "table") end },
+    { name = "debug.getconstant", run = function() local function fn() return "hello" end; local c = D.getconstant(fn, 1) end },
+    { name = "debug.getconstants", run = function() local function fn() return "hello" end; local t = D.getconstants(fn); A(T(t) == "table") end },
+    { name = "debug.getstack", run = function() local function inner() local x = 123; local v = D.getstack(1); A(T(v) == "table") end; inner() end },
+}
+
+
+
+for _, n in I(M) do
+    print(D[n] and "F debug." .. n or "X debug." .. n .. " (missing)")
+end
+
+for _, t in I(tests) do
+    local ok, err = P(t.run)
+    print(ok and "F" or "X" .. tostring(err), t.name)
+end
