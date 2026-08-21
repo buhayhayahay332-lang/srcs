@@ -46,4 +46,4 @@ loadstring(game:HttpGet(
 
 `main.luau` fetches the child modules, starts both aimmod and gunmod, and opens the shared hub. Re-running it while active returns the existing hub instead of duplicating GUI windows or hooks.
 
-The original `aimmod.luau` and `backups/gunmod.luau` remain unchanged as reference implementations.
+
