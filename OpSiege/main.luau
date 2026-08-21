@@ -1,21 +1,11 @@
 --[[
 	Loadstring bootstrap for the modular production build.
 
-	Before running this file, set getgenv().OperationSiegeProductionUrl to the
-	RAW URL of the prod folder, including the trailing slash. Example:
-
-	getgenv().OperationSiegeProductionUrl =
-		"https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/prod/"
-	loadstring(game:HttpGet(getgenv().OperationSiegeProductionUrl .. "main.luau"))()
+	The source is hosted at buhayhayahay332-lang/srcs, under OpSiege/prod.
 ]]
 
-local environment = type(getgenv) == "function" and getgenv() or _G
-local baseUrl = environment.OperationSiegeProductionUrl
-
-assert(type(baseUrl) == "string" and baseUrl ~= "", "Set getgenv().OperationSiegeProductionUrl before loading prod/main.luau")
-if baseUrl:sub(-1) ~= "/" then
-	baseUrl = baseUrl .. "/"
-end
+local baseUrl = "https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/main/OpSiege/prod/"
+local environment = type(getfenv) == "function" and getfenv() or _G
 
 local modules = {
 	["aimmod.Config"] = "aimmod/Config.luau",
@@ -85,10 +75,9 @@ local function requireModule(token)
 	return result
 end
 
-local requestedModules = environment.OperationSiegeProductionModules or { "aimmod", "gunmod" }
 local started = {}
 
-for _, name in ipairs(requestedModules) do
+for _, name in ipairs({ "aimmod", "gunmod" }) do
 	if name == "aimmod" then
 		started.aimmod = requireModule(tokens["aimmod.init"]).start()
 	elseif name == "gunmod" then
