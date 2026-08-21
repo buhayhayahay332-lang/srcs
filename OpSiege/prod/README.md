@@ -1,4 +1,4 @@
-# Operation Siege production modules
+# Operation Siege Simple Game Modification 
 
 This is an executor-first GitHub module system. Each feature is isolated so its UI, runtime state, and game-specific logic can be updated without editing the other feature.
 
