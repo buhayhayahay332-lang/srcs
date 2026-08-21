@@ -1,12 +1,12 @@
--- build/main.luau
--- Operation Siege — modular Obsidian loader.
---
--- Paste ONLY this file. It HttpGets the Obsidian library + the two modules
--- from GitHub (fully portable, no readfile). Set RAW_BASE to your repo's raw
--- URL (the folder that contains "modules/").
---
---   RAW_BASE should end with a "/" and point at the repo root, e.g.
---   https://raw.githubusercontent.com/<you>/<repo>/<branch>/
+
+
+
+
+
+
+
+
+
 
 local RAW_BASE = "https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/main/OpSiege/"
 local OBSIDIAN_URL = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"
@@ -16,22 +16,22 @@ local function loadModule(name)
 	return loadstring(src)()
 end
 
--- Load Obsidian UI library
+
 local Library = loadstring(game:HttpGet(OBSIDIAN_URL))()
 local Options = Library.Options
 
 Library.ShowToggleFrameInKeybinds = true
 
--- Load Obsidian addons: ThemeManager (menu themes) + SaveManager (config save/load)
--- Mirrors the official Example.lua.
+
+
 local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/SaveManager.lua"))()
 
--- Load modules (each returns { Settings, Init, BuildTab, ... })
+
 local Aimbot = loadModule("aimmod")
 local GunMod = loadModule("gunmod")
 
--- Build window
+
 local Window = Library:CreateWindow({
 	Title = "Operation Siege",
 	Footer = "modular build",
@@ -47,11 +47,11 @@ local Tabs = {
 	UI = Window:AddTab("UI Settings", "palette"),
 }
 
--- Let each module build its own tab
+
 Aimbot.BuildTab(Tabs.Aimbot, Library)
 GunMod.BuildTab(Tabs.Gun, Library)
 
--- Settings tab (loader-level)
+
 local MenuGroup = Tabs.Settings:AddLeftGroupbox("Menu")
 MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {
 	Default = "RightShift",
@@ -77,20 +77,20 @@ Tabs.Settings:AddRightGroupbox("Info"):AddLabel(
 	true
 )
 
--- Wire the menu toggle keybind
+
 Library.ToggleKeybind = Options.MenuKeybind
 
--- Start module hooks / loops
+
 Aimbot.Init()
 GunMod.Init()
 
--- Hand the library over to the addons, then build their UI on the UI Settings tab
+
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 
--- Don't let configs save theme settings (themes are managed separately)
+
 SaveManager:IgnoreThemeSettings()
--- Don't let each config store a different menu keybind
+
 SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 
 ThemeManager:SetFolder("OperationSiege")
@@ -99,7 +99,7 @@ SaveManager:SetFolder("OperationSiege")
 ThemeManager:ApplyToTab(Tabs.UI)
 SaveManager:BuildConfigSection(Tabs.UI)
 
--- Load a config marked to auto-load, if one exists
+
 SaveManager:LoadAutoloadConfig()
 
 Library:Notify({
