@@ -1,3 +1,14 @@
+
+
+
+
+
+
+
+
+
+
+
 local Settings = {
 	Enabled = false,
 	NoRecoil = false,
@@ -17,9 +28,9 @@ local function Log(msg)
 	if Settings.Verbose then print("[GunMod] " .. msg) end
 end
 
--- ============================================================================
--- Strict detection (metatable-safe reads via rawget)
--- ============================================================================
+
+
+
 local function IsGunConfig(t)
 	if type(t) ~= "table" then return false end
 	if rawget(t, "Type") ~= "Gun" then return false end
@@ -38,9 +49,9 @@ local function IsAttachConfig(t)
 	return true
 end
 
--- ============================================================================
--- Original-value storage (keyed by table) + restore
--- ============================================================================
+
+
+
 local originals = {}
 
 local function CloneValue(v, depth)
@@ -103,9 +114,9 @@ local function RestoreTable(t)
 	end
 end
 
--- ============================================================================
--- Mod application (idempotent, in-place, rawset)
--- ============================================================================
+
+
+
 local function ApplyMods(t)
 	if not Settings.Enabled then
 		return false
@@ -219,9 +230,9 @@ local function ReapplyAll()
 	return count
 end
 
--- ============================================================================
--- Live config capture (from the engine's own remotes -> exact tables it uses)
--- ============================================================================
+
+
+
 local liveGuns = {}
 local liveAtts = {}
 
@@ -271,8 +282,8 @@ local function Init()
 		return oldNamecall(self, ...)
 	end))
 
-	-- Cheap patch loop: when enabled, restore+apply each tick (so toggling a
-	-- mod OFF cleanly reverts). When disabled, revert once then idle.
+	
+	
 	local wasEnabled = false
 	task.spawn(function()
 		while true do
@@ -290,9 +301,9 @@ local function Init()
 	end)
 end
 
--- ============================================================================
--- GUI
--- ============================================================================
+
+
+
 local function BuildTab(tab, Library)
 	local Options = Library.Options
 
