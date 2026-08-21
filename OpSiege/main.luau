@@ -22,6 +22,11 @@ local Options = Library.Options
 
 Library.ShowToggleFrameInKeybinds = true
 
+-- Load Obsidian addons: ThemeManager (menu themes) + SaveManager (config save/load)
+-- Mirrors the official Example.lua.
+local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/SaveManager.lua"))()
+
 -- Load modules (each returns { Settings, Init, BuildTab, ... })
 local Aimbot = loadModule("aimmod")
 local GunMod = loadModule("gunmod")
@@ -39,6 +44,7 @@ local Tabs = {
 	Aimbot = Window:AddTab("Aimbot", "crosshair"),
 	Gun = Window:AddTab("Gun Mods", "zap"),
 	Settings = Window:AddTab("Settings", "settings"),
+	UI = Window:AddTab("UI Settings", "palette"),
 }
 
 -- Let each module build its own tab
@@ -78,8 +84,26 @@ Library.ToggleKeybind = Options.MenuKeybind
 Aimbot.Init()
 GunMod.Init()
 
+-- Hand the library over to the addons, then build their UI on the UI Settings tab
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+-- Don't let configs save theme settings (themes are managed separately)
+SaveManager:IgnoreThemeSettings()
+-- Don't let each config store a different menu keybind
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+
+ThemeManager:SetFolder("OperationSiege")
+SaveManager:SetFolder("OperationSiege")
+
+ThemeManager:ApplyToTab(Tabs.UI)
+SaveManager:BuildConfigSection(Tabs.UI)
+
+-- Load a config marked to auto-load, if one exists
+SaveManager:LoadAutoloadConfig()
+
 Library:Notify({
 	Title = "Operation Siege",
-	Description = "Loaded. Enable mods in the Aimbot / Gun Mods tabs.",
+	Description = "Loaded. Enable mods in the Aimbot / Gun Mods tabs. Themes/configs in UI Settings.",
 	Time = 4,
 })
