@@ -1,13 +1,3 @@
-
-
-
-
-
-
-
-
-
-
 local RAW_BASE = "https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/main/OpSiege/"
 local OBSIDIAN_URL = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"
 
@@ -34,9 +24,10 @@ local GunMod = loadModule("gunmod")
 
 local Window = Library:CreateWindow({
 	Title = "Operation Siege",
-	Footer = "modular build",
+	Icon = 13129527031,
+	Footer = "[ASTRO BETA v1]",
 	NotifySide = "Right",
-	ShowCustomCursor = true,
+	ShowCustomCursor = false,
 	AutoShow = true,
 })
 
