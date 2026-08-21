@@ -1,14 +1,3 @@
--- build/modules/gunmod.luau
--- Operation Siege GUN MODS (No Recoil / No Spread / Fire Rate / Max Damage /
--- Infinite Ammo) — modular, GUI-bound.
--- Loaded by build/main.luau via HttpGet. Exposes:
---   Settings, Init(), BuildTab(tab, Library), ApplyMods, ReapplyAll, GetStatus
---
--- v6 strategy (no GC scan -> no freeze): capture the engine's LIVE u81/u97
--- tables from the Equip/Damage remotes it fires, then re-apply mods to ONLY
--- those known tables on a cheap loop. Dispatch-first namecall hook.
--- NaN-safety kept: recoil/spread divisors never zeroed (0/0 = NaN CFrame).
-
 local Settings = {
 	Enabled = false,
 	NoRecoil = false,
