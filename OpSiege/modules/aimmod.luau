@@ -1,15 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
 local Settings = {
 	AimEnabled = false,
 	AimFOV = 10,
