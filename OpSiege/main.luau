@@ -24,7 +24,7 @@ local GunMod = loadModule("gunmod")
 
 local Window = Library:CreateWindow({
 	Title = "Operation Siege",
-	Icon = 13129527031,
+	Icon  = 13129527031,
 	Footer = "[ASTRO BETA v1]",
 	NotifySide = "Right",
 	ShowCustomCursor = false,
@@ -63,10 +63,6 @@ MenuGroup:AddButton("Unload", function()
 	Library:Unload()
 end)
 
-Tabs.Settings:AddRightGroupbox("Info"):AddLabel(
-	"Operation Siege\nAimbot + Gun Mods\nGUI by Obsidian\n\nEnable mods in the\nAimbot / Gun Mods tabs.",
-	true
-)
 
 
 Library.ToggleKeybind = Options.MenuKeybind
@@ -95,6 +91,6 @@ SaveManager:LoadAutoloadConfig()
 
 Library:Notify({
 	Title = "Operation Siege",
-	Description = "Loaded. Enable mods in the Aimbot / Gun Mods tabs. Themes/configs in UI Settings.",
+	Description = "GO CRAZY FURRY ASS BOI HAVE FUN.",
 	Time = 4,
 })
