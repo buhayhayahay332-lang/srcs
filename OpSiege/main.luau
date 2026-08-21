@@ -1,14 +1,4 @@
--- build/main.luau
--- Operation Siege — modular Obsidian loader.
---
--- Paste ONLY this file. It HttpGets the Obsidian library + the two modules
--- from GitHub (fully portable, no readfile). Set RAW_BASE to your repo's raw
--- URL (the folder that contains "modules/").
---
---   RAW_BASE should end with a "/" and point at the repo root, e.g.
---   https://raw.githubusercontent.com/<you>/<repo>/<branch>/
-
-local RAW_BASE = "https://raw.githubusercontent.com/USER/REPO/BRANCH/"  -- <-- EDIT ME
+local RAW_BASE = "https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/main/OpSiege/"
 local OBSIDIAN_URL = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"
 
 local function loadModule(name)
@@ -16,17 +6,15 @@ local function loadModule(name)
 	return loadstring(src)()
 end
 
--- Load Obsidian UI library
+
 local Library = loadstring(game:HttpGet(OBSIDIAN_URL))()
 local Options = Library.Options
 
 Library.ShowToggleFrameInKeybinds = true
 
--- Load modules (each returns { Settings, Init, BuildTab, ... })
 local Aimbot = loadModule("aimmod")
 local GunMod = loadModule("gunmod")
 
--- Build window
 local Window = Library:CreateWindow({
 	Title = "Operation Siege",
 	Footer = "modular build",
@@ -41,11 +29,9 @@ local Tabs = {
 	Settings = Window:AddTab("Settings", "settings"),
 }
 
--- Let each module build its own tab
 Aimbot.BuildTab(Tabs.Aimbot, Library)
 GunMod.BuildTab(Tabs.Gun, Library)
 
--- Settings tab (loader-level)
 local MenuGroup = Tabs.Settings:AddLeftGroupbox("Menu")
 MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {
 	Default = "RightShift",
@@ -71,10 +57,8 @@ Tabs.Settings:AddRightGroupbox("Info"):AddLabel(
 	true
 )
 
--- Wire the menu toggle keybind
 Library.ToggleKeybind = Options.MenuKeybind
 
--- Start module hooks / loops
 Aimbot.Init()
 GunMod.Init()
 
