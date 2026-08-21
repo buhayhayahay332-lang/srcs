@@ -1,15 +1,3 @@
--- build/modules/aimmod.luau
--- Operation Siege SILENT AIM (ray redirect, always-on) — modular, GUI-bound.
--- Loaded by build/main.luau via HttpGet. Exposes:
---   Settings, Init(), BuildTab(tab, Library), GetStatus()
---
--- HARD RULES (kept from standalone v4):
---   - ZERO method/namecall calls between getnamecallmethod() and oldNamecall().
---     Only property reads (.X/.Y/.Z, .Unit, .Magnitude, .CollisionGroup,
---     .Name, .Parent, .ClassName) + Lua math.
---   - Vector3:Dot avoided in the hook (component arithmetic instead).
---   - Dispatch-first: call oldNamecall immediately, side-work AFTER.
-
 local Settings = {
 	AimEnabled = false,
 	AimFOV = 10,
