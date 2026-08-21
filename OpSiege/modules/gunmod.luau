@@ -1,14 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
 local Settings = {
 	Enabled = false,
 	NoRecoil = false,
@@ -345,11 +334,13 @@ local function BuildTab(tab, Library)
 		Default = Settings.FireRateMultiplier, Min = 2, Max = 50, Rounding = 0,
 		Callback = function(v) Settings.FireRateMultiplier = v end,
 	})
-	Right:AddSlider("GM_PatchInterval", {
+	--[[
+Right:AddSlider("GM_PatchInterval", {
 		Text = "Patch Interval",
 		Default = Settings.PatchInterval, Min = 0.1, Max = 1.0, Rounding = 2, Suffix = "s",
 		Callback = function(v) Settings.PatchInterval = v end,
 	})
+]]
 	Right:AddDivider()
 	Right:AddLabel("Captured: 0 guns / 0 atts", false, "GMStatus")
 
