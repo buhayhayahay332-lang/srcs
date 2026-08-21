@@ -46,4 +46,4 @@ loadstring(game:HttpGet(
 
 `main.luau` fetches the child modules and starts both aimmod and gunmod.
 
-The original `aimmod.luau` and `backups/gunmod.luau` remain unchanged as reference implementations.
+
