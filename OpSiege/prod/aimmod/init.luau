@@ -3,8 +3,6 @@ local Targeting = require("aimmod.Targeting")
 local FovCircle = require("aimmod.FovCircle")
 local PayloadCache = require("aimmod.PayloadCache")
 local Hook = require("aimmod.Hook")
-local Obsidian = require("aimmod.Obsidian")
-local UI = require("aimmod.UI")
 
 local AimMod = {}
 AimMod.__index = AimMod
@@ -26,7 +24,6 @@ function AimMod.new(overrides)
 		PayloadCache = payloadCache,
 		FovCircle = fovCircle,
 		Hook = hook,
-		Window = nil,
 		Started = false,
 	}, AimMod)
 end
@@ -45,8 +42,6 @@ function AimMod:Start()
 		warn("[AimMod] hook not installed:", reason)
 	end
 
-	local library = Obsidian.load()
-	self.Window = UI.build(library, self.Settings)
 	self.Started = true
 	return self
 end
@@ -62,7 +57,7 @@ end
 function AimMod.start(overrides)
 	local environment = getEnvironment()
 	if environment.OperationSiegeProductionAimMod then
-		return environment.OperationSiegeProductionAimMod
+		return environment.OperationSiegeProductionAimMod:Start()
 	end
 
 	local instance = AimMod.new(overrides)

@@ -1,13 +1,13 @@
 local Config = {}
 
 Config.Defaults = {
-	AimEnabled = true,
+	AimEnabled = false,
 	AimFOV = 10,
 	AimDistance = 300,
 	AimPart = "Head",
-	TeamCheck = true,
-	Wallbang = true,
-	ShowFovCircle = true,
+	TeamCheck = false,
+	Wallbang = false,
+	ShowFovCircle = false,
 	FovCircleColor = Color3.fromRGB(255, 255, 255),
 	TargetRefreshRate = 0.05,
 	Debug = false,

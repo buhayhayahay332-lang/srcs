@@ -14,16 +14,14 @@ local modules = {
 	["aimmod.PayloadCache"] = "aimmod/PayloadCache.luau",
 	["aimmod.Hook"] = "aimmod/Hook.luau",
 	["aimmod.Obsidian"] = "aimmod/Obsidian.luau",
-	["aimmod.UI"] = "aimmod/UI.luau",
 	["aimmod.init"] = "aimmod/init.luau",
 	["gunmod.Config"] = "gunmod/Config.luau",
 	["gunmod.TableStore"] = "gunmod/TableStore.luau",
 	["gunmod.Patcher"] = "gunmod/Patcher.luau",
 	["gunmod.Scanner"] = "gunmod/Scanner.luau",
 	["gunmod.Runtime"] = "gunmod/Runtime.luau",
-	["gunmod.Obsidian"] = "gunmod/Obsidian.luau",
-	["gunmod.UI"] = "gunmod/UI.luau",
 	["gunmod.init"] = "gunmod/init.luau",
+	["MainUI"] = "MainUI.luau",
 }
 
 local loaded = {}
@@ -54,16 +52,28 @@ local function requireModule(moduleId)
 	return result
 end
 
-local started = {}
-
-for _, name in ipairs({ "aimmod", "gunmod" }) do
-	if name == "aimmod" then
-		started.aimmod = requireModule("aimmod.init").start()
-	elseif name == "gunmod" then
-		started.gunmod = requireModule("gunmod.init").start()
-	else
-		warn("[OperationSiege] unknown production module:", name)
-	end
+if environment.OperationSiegeProductionHub and environment.OperationSiegeProductionHub.Active then
+	return environment.OperationSiegeProductionHub
 end
 
+local started = {
+	aimmod = requireModule("aimmod.init").start(),
+	gunmod = requireModule("gunmod.init").start(),
+	Active = true,
+}
+
+local obsidian = requireModule("aimmod.Obsidian").load()
+started.Window = requireModule("MainUI").build(obsidian, started.aimmod, started.gunmod)
+
+obsidian.Library:OnUnload(function()
+	started.Active = false
+	started.aimmod:Stop()
+	started.gunmod:Stop()
+
+	if environment.OperationSiegeProductionHub == started then
+		environment.OperationSiegeProductionHub = nil
+	end
+end)
+
+environment.OperationSiegeProductionHub = started
 return started

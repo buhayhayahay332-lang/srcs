@@ -62,6 +62,9 @@ function Scanner:Scan()
 	end
 
 	self.LastScanCount = patched
+	if self.Settings.Verbose and patched > 0 then
+		print("[GunMod] scan patched " .. tostring(patched) .. " config table(s)")
+	end
 	return patched
 end
 

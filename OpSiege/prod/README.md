@@ -30,9 +30,9 @@ prod/
 
 `prod/main.luau` is a custom HTTP module loader. It downloads the `.luau` files from GitHub and resolves internal module IDs such as `require("aimmod.Config")`; there are no Roblox Studio `ModuleScript` or `script.Parent` requirements.
 
-Each UI callback writes directly to the same settings table read by its runtime module. Changes from the Obsidian interface therefore apply live; you do not need to rerun the loader to toggle a feature, adjust the aim FOV, change the target part, or alter the gun settings.
+`MainUI.luau` creates one shared Obsidian window after both runtime modules are started. Every original setting is available there: aim targeting and FOV visuals, weapon patches, and scanner timing/maintenance. Each callback writes directly to the settings table read by its runtime, so changes apply live.
 
-Both features load Obsidian from its upstream `Library.lua` endpoint. They share one `OperationSiegeObsidian` environment reference, so running both modules does not download or initialize a second library copy.
+The **UI Settings** tab provides a configurable UI-toggle keybind (default `RightShift`), an **Unload Operation Siege** button, theme controls, and Obsidian's full save/load configuration panel. Saved configurations include AimMod and GunMod settings. Both features share one Obsidian library instance, so only one GUI is created.
 
 ## Loadstring use
 
@@ -44,6 +44,6 @@ loadstring(game:HttpGet(
 ))()
 ```
 
-`main.luau` fetches the child modules and starts both aimmod and gunmod.
+`main.luau` fetches the child modules, starts both aimmod and gunmod, and opens the shared hub. Re-running it while active returns the existing hub instead of duplicating GUI windows or hooks.
 
-
+The original `aimmod.luau` and `backups/gunmod.luau` remain unchanged as reference implementations.

@@ -3,8 +3,6 @@ local TableStore = require("gunmod.TableStore")
 local Patcher = require("gunmod.Patcher")
 local Scanner = require("gunmod.Scanner")
 local Runtime = require("gunmod.Runtime")
-local Obsidian = require("gunmod.Obsidian")
-local UI = require("gunmod.UI")
 
 local GunMod = {}
 GunMod.__index = GunMod
@@ -26,7 +24,6 @@ function GunMod.new(overrides)
 		Patcher = patcher,
 		Scanner = scanner,
 		Runtime = runtime,
-		Window = nil,
 		Started = false,
 	}, GunMod)
 end
@@ -37,8 +34,6 @@ function GunMod:Start()
 	end
 
 	self.Runtime:Start()
-	local library = Obsidian.load()
-	self.Window = UI.build(library, self.Settings, self.Runtime)
 	self.Started = true
 	return self
 end
@@ -53,7 +48,7 @@ end
 function GunMod.start(overrides)
 	local environment = getEnvironment()
 	if environment.OperationSiegeProductionGunMod then
-		return environment.OperationSiegeProductionGunMod
+		return environment.OperationSiegeProductionGunMod:Start()
 	end
 
 	local instance = GunMod.new(overrides)

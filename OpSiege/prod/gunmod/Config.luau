@@ -1,14 +1,14 @@
 local Config = {}
 
 Config.Defaults = {
-	Enabled = true,
-	NoRecoil = true,
-	NoSpread = true,
-	FireRateBoost = true,
+	Enabled = false,
+	NoRecoil = false,
+	NoSpread = false,
+	FireRateBoost = false,
 	FireRateMultiplier = 10,
-	MaxDamage = true,
-	InfiniteAmmo = true,
-	BackgroundScan = true,
+	MaxDamage = false,
+	InfiniteAmmo = false,
+	BackgroundScan = false,
 	Verbose = false,
 	ScanDelay = 0.3,
 	ScanInterval = 2,
