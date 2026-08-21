@@ -37,15 +37,11 @@ Both modules load Obsidian from its upstream `Library.lua` endpoint. They share 
 Host the complete `prod` folder somewhere that serves raw `.luau` files, then use the root loader:
 
 ```lua
-getgenv().OperationSiegeProductionUrl =
-	"https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/prod/"
-
--- Optional: { "aimmod" }, { "gunmod" }, or omit for both.
-getgenv().OperationSiegeProductionModules = { "aimmod", "gunmod" }
-
-loadstring(game:HttpGet(getgenv().OperationSiegeProductionUrl .. "main.luau"))()
+loadstring(game:HttpGet(
+	"https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/main/OpSiege/prod/main.luau"
+))()
 ```
 
-`main.luau` fetches the child modules and supplies their module-relative `require(script.X)` dependencies at runtime. This means the same source tree works both as Roblox ModuleScripts and from a loadstring bootstrap.
+`main.luau` fetches the child modules and starts both aimmod and gunmod. It supplies their module-relative `require(script.X)` dependencies at runtime, so the same source tree works both as Roblox ModuleScripts and from a loadstring bootstrap.
 
 The original `aimmod.luau` and `backups/gunmod.luau` remain unchanged as reference implementations.
