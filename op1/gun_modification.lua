@@ -5,11 +5,20 @@ local Module = {
     shared = nil,
     _gunModule = nil,
     _savedConstants = {},
+    _savedFunctions = {},
     config = {
         recoil_reduction = 0,
         horizontal_recoil = 0,
         no_spread = false,
         force_auto = false,
+        firerate_multiplier = 1,
+        reload_speed_boost = 1,
+        equip_speed_boost = 1,
+        silent_shots = false,
+        no_flash = false,
+        no_trails = false,
+        no_hit_effects = false,
+        no_kickback = false,
     },
 }
 
@@ -73,6 +82,45 @@ local function restoreSavedPatches(self)
     end
 end
 
+local function saveFunctionPatch(self, name, original)
+    if self._savedFunctions[name] then
+        return
+    end
+
+    self._savedFunctions[name] = original
+end
+
+local function restoreSavedFunctions(self)
+    local gunModule = self._gunModule
+
+    for name, original in pairs(self._savedFunctions) do
+        if type(original) == "function" and type(gunModule) == "table" then
+            pcall(function()
+                gunModule[name] = original
+            end)
+        end
+    end
+
+    self._savedFunctions = {}
+end
+
+local function replaceFunction(self, name, replacement)
+    local gunModule = self._gunModule
+    if type(gunModule) ~= "table" then
+        return false, "gun module unavailable"
+    end
+
+    local original = gunModule[name]
+    if type(original) ~= "function" then
+        return false, "function not found"
+    end
+
+    saveFunctionPatch(self, name, original)
+    gunModule[name] = replacement
+
+    return true
+end
+
 local function patchConstantByValue(self, fn, key, oldValue, newValue)
     local getconstantsFn, setconstantFn = getConstantsApi()
     if not getconstantsFn then
@@ -84,15 +132,20 @@ local function patchConstantByValue(self, fn, key, oldValue, newValue)
         return false, "C unavailable"
     end
 
+    local patched = 0
+
     for index = 1, #constants do
         if constants[index] == oldValue then
-            savePatch(self, fn, key, index, oldValue)
+            savePatch(self, fn, key .. "_" .. index, index, oldValue)
             local ok = pcall(setconstantFn, fn, index, newValue)
-            if not ok then
-                return false, "SC failed"
+            if ok then
+                patched = patched + 1
             end
-            return true
         end
+    end
+
+    if patched > 0 then
+        return true
     end
 
     return false, "C not found"
@@ -191,6 +244,7 @@ function Module:_applyConfig()
     end
 
     restoreSavedPatches(self)
+    restoreSavedFunctions(self)
 
     local enabled = self._enabled == true
 
@@ -220,6 +274,67 @@ function Module:_applyConfig()
             if type(inputRenderFn) == "function" then
                 patchConstantByValue(self, inputRenderFn, "auto", "automatic", "tag")
             end
+        end
+
+        local firerateBoost = tonumber(self.config.firerate_multiplier) or 1
+        if firerateBoost > 1 then
+            local firerateRenderFn = gunModule.input_render
+            if type(firerateRenderFn) == "function" then
+                patchConstantByValue(self, firerateRenderFn, "firerate", 60, 60 * firerateBoost)
+            end
+
+            local firerateShootFn = gunModule.input_shoot
+            if type(firerateShootFn) == "function" then
+                patchConstantByValue(self, firerateShootFn, "firerate", 60, 60 * firerateBoost)
+            end
+        end
+
+        local reloadBoost = tonumber(self.config.reload_speed_boost) or 1
+        if reloadBoost > 1 then
+            local reloadBeginFn = gunModule.reload_begin
+            if type(reloadBeginFn) == "function" then
+                patchConstantByValue(self, reloadBeginFn, "reload_wait", 0.5, math.max(0.01, 0.5 / reloadBoost))
+                patchConstantByValue(self, reloadBeginFn, "single_load_wait", 0.15, math.max(0.01, 0.15 / reloadBoost))
+            end
+        end
+
+        local equipBoost = tonumber(self.config.equip_speed_boost) or 1
+        if equipBoost > 1 then
+            local equipFn = gunModule.equip
+            if type(equipFn) == "function" then
+                patchConstantByValue(self, equipFn, "equip_pivot", 0.2, math.max(0.01, 0.2 / equipBoost))
+            end
+        end
+
+        if self.config.silent_shots == true then
+            local silentShootFn = gunModule.shoot
+            if type(silentShootFn) == "function" then
+                patchConstantByValue(self, silentShootFn, "silent", "Shoot", "SilencedShoot")
+            end
+        end
+
+        if self.config.no_flash == true then
+            replaceFunction(self, "flash", function() end)
+
+            local smokeShootFn = gunModule.shoot
+            if type(smokeShootFn) == "function" then
+                patchConstantByValue(self, smokeShootFn, "smoke", 3, 0)
+            end
+        end
+
+        if self.config.no_trails == true then
+            local trailFn = gunModule.trail
+            if type(trailFn) == "function" then
+                patchConstantByValue(self, trailFn, "trail", 0.1, 0)
+            end
+        end
+
+        if self.config.no_hit_effects == true then
+            replaceFunction(self, "bullet_hit", function() end)
+        end
+
+        if self.config.no_kickback == true then
+            replaceFunction(self, "kickback", function() end)
         end
     end
 
@@ -295,7 +410,9 @@ function Module:unload()
     self._enabled = false
 
     restoreSavedPatches(self)
+    restoreSavedFunctions(self)
     self._savedConstants = {}
+    self._savedFunctions = {}
     self._hooked = false
 
     self._initialized = false
