@@ -1,4 +1,3 @@
-warn("xd 1")
 local Module = {
     _initialized = false,
     _enabled = false,
@@ -6,7 +5,6 @@ local Module = {
     shared = nil,
     _gunModule = nil,
     _savedConstants = {},
-    _savedFunctions = {},
     _savedProps = {},
     _methodHooks = {},
     _respawnConn = nil,
@@ -84,34 +82,6 @@ local function restoreSavedPatches(self)
     end
 end
 
-local function saveFunctionPatch(self, target, name, original)
-    local targetState = self._savedFunctions[target]
-    if not targetState then
-        targetState = {}
-        self._savedFunctions[target] = targetState
-    end
-
-    if not targetState[name] then
-        targetState[name] = original
-    end
-end
-
-local function restoreSavedFunctions(self)
-    for target, targetState in pairs(self._savedFunctions) do
-        if type(target) == "table" and type(targetState) == "table" then
-            for name, original in pairs(targetState) do
-                if type(original) == "function" then
-                    pcall(function()
-                        target[name] = original
-                    end)
-                end
-            end
-        end
-    end
-
-    self._savedFunctions = {}
-end
-
 local function getHookFunction(self)
     if type(hookfunction) == "function" then
         return hookfunction
@@ -145,6 +115,11 @@ local function installMethodHook(self, target, name, handler)
     }
 
     local replacement = function(...)
+        if type(setstackhidden) == "function" then
+            pcall(setstackhidden, 1, true)
+            pcall(setstackhidden, 1, 1, true)
+        end
+
         return handler(state, ...)
     end
 
@@ -157,9 +132,9 @@ local function installMethodHook(self, target, name, handler)
         end
     end
 
-    -- Also replace the method table entry so future dynamic method lookups use
-    -- the wrapper, including environments where hookfunction is unavailable.
-    target[name] = replacement
+    pcall(function()
+        target[name] = replacement
+    end)
     table.insert(self._methodHooks, state)
     return true
 end
@@ -181,22 +156,6 @@ local function restoreMethodHooks(self)
     end
 
     self._methodHooks = {}
-end
-
-local function replaceFunction(self, target, name, replacement)
-    if type(target) ~= "table" then
-        return false, "module unavailable"
-    end
-
-    local original = target[name]
-    if type(original) ~= "function" then
-        return false, "function not found"
-    end
-
-    saveFunctionPatch(self, target, name, original)
-    target[name] = replacement
-
-    return true
 end
 
 local function restoreSavedProps(self)
@@ -254,27 +213,6 @@ local function patchConstantByValue(self, fn, key, oldValue, newValue)
             local ok = pcall(setconstantFn, fn, index, newValue)
             if ok then
                 patched = patched + 1
-            end
-        end
-    end
-
-    if type(getprotos) == "function" then
-        local okProtos, protos = pcall(getprotos, fn)
-        if okProtos and type(protos) == "table" then
-            for protoIndex, proto in ipairs(protos) do
-                if type(proto) == "function" then
-                    local okProto, protoConstants = pcall(getconstantsFn, proto)
-                    if okProto and type(protoConstants) == "table" then
-                        for index = 1, #protoConstants do
-                            if protoConstants[index] == oldValue then
-                                savePatch(self, proto, key .. "_p" .. protoIndex .. "_" .. index, index, oldValue)
-                                if pcall(setconstantFn, proto, index, newValue) then
-                                    patched = patched + 1
-                                end
-                            end
-                        end
-                    end
-                end
             end
         end
     end
@@ -418,6 +356,20 @@ function Module:_installHook()
         end)
     end
 
+    local equipAnim = nil
+    pcall(function()
+        equipAnim = gunModule.anim.Equip
+    end)
+    if type(equipAnim) == "table" and type(equipAnim.arm1_grab) == "function" then
+        installMethodHook(self, equipAnim, "arm1_grab", function(state, ...)
+            if self._enabled and (tonumber(self.config.equip_speed_boost) or 1) > 1 then
+                task.spawn(state.original, ...)
+                return { Completed = { Wait = function() end } }
+            end
+            return state.original(...)
+        end)
+    end
+
     self._hooked = true
     return true
 end
@@ -429,7 +381,6 @@ function Module:_applyConfig()
     end
 
     restoreSavedPatches(self)
-    restoreSavedFunctions(self)
     restoreSavedProps(self)
 
     local enabled = self._enabled == true
@@ -475,46 +426,6 @@ function Module:_applyConfig()
             end
         end
 
-        local equipBoost = tonumber(self.config.equip_speed_boost) or 1
-        if equipBoost > 1 then
-            local equipFn = gunModule.equip
-            if type(equipFn) == "function" then
-                patchConstantByValue(self, equipFn, "equip_pivot", 0.2, 0.2 / equipBoost)
-            end
-        end
-
-        if self.config.no_flash == true then
-            local flashFn = gunModule.flash
-            if type(flashFn) == "function" then
-                patchConstantByValue(self, flashFn, "flash_emit", 3, 0)
-                patchConstantByValue(self, flashFn, "flash_light", 0.05, 0)
-            end
-
-            local smokeShootFn = gunModule.shoot
-            if type(smokeShootFn) == "function" then
-                patchConstantByValue(self, smokeShootFn, "smoke", "Smoke", "Smoke_Disabled")
-            end
-        end
-
-        if self.config.no_trails == true then
-            local trailFn = gunModule.trail
-            if type(trailFn) == "function" then
-                patchConstantByValue(self, trailFn, "trail", 0.1, 0)
-            end
-        end
-
-        if self.config.no_hit_effects == true then
-            local bulletHitFn = gunModule.bullet_hit
-            if type(bulletHitFn) == "function" then
-                patchConstantByValue(self, bulletHitFn, "hit_emit", 2, 0)
-                patchConstantByValue(self, bulletHitFn, "water_check", "Water", "Water_Disabled")
-            end
-
-            local parentModule = getmetatable(gunModule)
-            if type(parentModule) == "table" and type(parentModule.emit_blood) == "function" then
-                replaceFunction(self, parentModule, "emit_blood", function() end)
-            end
-        end
 
         if self.config.no_kickback == true then
             shadowTableField(self, gunModule.anim, "Shoot", {
@@ -635,10 +546,8 @@ function Module:unload()
 
     restoreMethodHooks(self)
     restoreSavedPatches(self)
-    restoreSavedFunctions(self)
     restoreSavedProps(self)
     self._savedConstants = {}
-    self._savedFunctions = {}
     self._savedProps = {}
     self._hooked = false
 
