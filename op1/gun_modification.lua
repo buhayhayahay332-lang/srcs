@@ -1,3 +1,4 @@
+warn("xd 1")
 local Module = {
     _initialized = false,
     _enabled = false,
@@ -7,6 +8,7 @@ local Module = {
     _savedConstants = {},
     _savedFunctions = {},
     _savedProps = {},
+    _methodHooks = {},
     _respawnConn = nil,
     config = {
         recoil_reduction = 0,
@@ -108,6 +110,77 @@ local function restoreSavedFunctions(self)
     end
 
     self._savedFunctions = {}
+end
+
+local function getHookFunction(self)
+    if type(hookfunction) == "function" then
+        return hookfunction
+    end
+
+    if self.shared and type(self.shared.hookfunction) == "function" then
+        return self.shared.hookfunction
+    end
+
+    return nil
+end
+
+local function installMethodHook(self, target, name, handler)
+    if type(target) ~= "table" or type(target[name]) ~= "function" then
+        return false, "method not found: " .. tostring(name)
+    end
+
+    for _, existing in ipairs(self._methodHooks) do
+        if existing.target == target and existing.name == name then
+            return true
+        end
+    end
+
+    local targetFunction = target[name]
+    local state = {
+        target = target,
+        name = name,
+        targetFunction = targetFunction,
+        original = targetFunction,
+        hookInstalled = false,
+    }
+
+    local replacement = function(...)
+        return handler(state, ...)
+    end
+
+    local hookfn = getHookFunction(self)
+    if hookfn then
+        local okHook, original = pcall(hookfn, targetFunction, replacement)
+        if okHook and type(original) == "function" then
+            state.original = original
+            state.hookInstalled = true
+        end
+    end
+
+    -- Also replace the method table entry so future dynamic method lookups use
+    -- the wrapper, including environments where hookfunction is unavailable.
+    target[name] = replacement
+    table.insert(self._methodHooks, state)
+    return true
+end
+
+local function restoreMethodHooks(self)
+    local hookfn = getHookFunction(self)
+
+    for index = #self._methodHooks, 1, -1 do
+        local state = self._methodHooks[index]
+        if state.hookInstalled and hookfn then
+            pcall(hookfn, state.targetFunction, state.original)
+        end
+
+        if type(state.target) == "table" then
+            pcall(function()
+                state.target[state.name] = state.targetFunction
+            end)
+        end
+    end
+
+    self._methodHooks = {}
 end
 
 local function replaceFunction(self, target, name, replacement)
@@ -295,6 +368,56 @@ function Module:_installHook()
         return false, tostring(gunErr or "gun module unavailable")
     end
 
+    installMethodHook(self, gunModule, "flash", function(state, gun, ...)
+        if self._enabled and self.config.no_flash == true then
+            return nil
+        end
+        return state.original(gun, ...)
+    end)
+
+    installMethodHook(self, gunModule, "shoot", function(state, gun, ...)
+        if not self._enabled or self.config.no_flash ~= true or not gun or not gun.shot then
+            return state.original(gun, ...)
+        end
+
+        local smoke = gun.shot:FindFirstChild("Smoke")
+        local smokeParent = smoke and smoke.Parent
+        if smoke and smokeParent then
+            smoke.Parent = nil
+            task.delay(0.35, function()
+                if smoke and not smoke.Parent and smokeParent and smokeParent.Parent then
+                    smoke.Parent = smokeParent
+                end
+            end)
+        end
+
+        return state.original(gun, ...)
+    end)
+
+    installMethodHook(self, gunModule, "trail", function(state, gun, ...)
+        if self._enabled and self.config.no_trails == true then
+            return nil
+        end
+        return state.original(gun, ...)
+    end)
+
+    installMethodHook(self, gunModule, "bullet_hit", function(state, gun, ...)
+        if self._enabled and self.config.no_hit_effects == true then
+            return nil
+        end
+        return state.original(gun, ...)
+    end)
+
+    local parentModule = getmetatable(gunModule)
+    if type(parentModule) == "table" and type(parentModule.emit_blood) == "function" then
+        installMethodHook(self, parentModule, "emit_blood", function(state, gun, ...)
+            if self._enabled and self.config.no_hit_effects == true then
+                return nil
+            end
+            return state.original(gun, ...)
+        end)
+    end
+
     self._hooked = true
     return true
 end
@@ -356,7 +479,7 @@ function Module:_applyConfig()
         if equipBoost > 1 then
             local equipFn = gunModule.equip
             if type(equipFn) == "function" then
-                patchConstantByValue(self, equipFn, "equip_pivot", 0.2, 0.2 * equipBoost)
+                patchConstantByValue(self, equipFn, "equip_pivot", 0.2, 0.2 / equipBoost)
             end
         end
 
@@ -510,6 +633,7 @@ end
 function Module:unload()
     self._enabled = false
 
+    restoreMethodHooks(self)
     restoreSavedPatches(self)
     restoreSavedFunctions(self)
     restoreSavedProps(self)
