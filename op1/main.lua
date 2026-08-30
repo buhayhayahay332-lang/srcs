@@ -1,4 +1,3 @@
-while true do end 
 local moduleRepo = "https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/refs/heads/main/op1/"
 
 local MODULE_FILES = {
