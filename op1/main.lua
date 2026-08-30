@@ -972,8 +972,8 @@ local function buildObsidianUi()
         Callback = function(v) setGunModConfig("firerate_multiplier", v) end,
     })
     AimR:AddSlider("GM_EquipBoost", {
-        Text = "Equip Speed", Default = 1, Min = 1, Max = 10, Rounding = 0, Suffix = "x",
-        Tooltip = "1 = off, higher = faster equip/holster",
+        Text = "Equip Speed", Default = 1, Min = 1, Max = 5, Rounding = 0, Suffix = "x",
+        Tooltip = "1 = off, higher = faster equip/holster (subtle: mostly speeds the gun snap-in)",
         Callback = function(v) setGunModConfig("equip_speed_boost", v) end,
     })
     AimR:AddDivider()

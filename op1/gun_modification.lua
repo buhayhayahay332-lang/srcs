@@ -6,6 +6,7 @@ local Module = {
     _gunModule = nil,
     _savedConstants = {},
     _savedFunctions = {},
+    _savedProps = {},
     _respawnConn = nil,
     config = {
         recoil_reduction = 0,
@@ -81,41 +82,82 @@ local function restoreSavedPatches(self)
     end
 end
 
-local function saveFunctionPatch(self, name, original)
-    if self._savedFunctions[name] then
-        return
+local function saveFunctionPatch(self, target, name, original)
+    local targetState = self._savedFunctions[target]
+    if not targetState then
+        targetState = {}
+        self._savedFunctions[target] = targetState
     end
 
-    self._savedFunctions[name] = original
+    if not targetState[name] then
+        targetState[name] = original
+    end
 end
 
 local function restoreSavedFunctions(self)
-    local gunModule = self._gunModule
-
-    for name, original in pairs(self._savedFunctions) do
-        if type(original) == "function" and type(gunModule) == "table" then
-            pcall(function()
-                gunModule[name] = original
-            end)
+    for target, targetState in pairs(self._savedFunctions) do
+        if type(target) == "table" and type(targetState) == "table" then
+            for name, original in pairs(targetState) do
+                if type(original) == "function" then
+                    pcall(function()
+                        target[name] = original
+                    end)
+                end
+            end
         end
     end
 
     self._savedFunctions = {}
 end
 
-local function replaceFunction(self, name, replacement)
-    local gunModule = self._gunModule
-    if type(gunModule) ~= "table" then
-        return false, "gun module unavailable"
+local function replaceFunction(self, target, name, replacement)
+    if type(target) ~= "table" then
+        return false, "module unavailable"
     end
 
-    local original = gunModule[name]
+    local original = target[name]
     if type(original) ~= "function" then
         return false, "function not found"
     end
 
-    saveFunctionPatch(self, name, original)
-    gunModule[name] = replacement
+    saveFunctionPatch(self, target, name, original)
+    target[name] = replacement
+
+    return true
+end
+
+local function restoreSavedProps(self)
+    for obj, objState in pairs(self._savedProps) do
+        if type(obj) == "table" and type(objState) == "table" then
+            for key, patch in pairs(objState) do
+                if type(patch) == "table" and patch.has then
+                    pcall(function()
+                        rawset(obj, key, patch.value)
+                    end)
+                end
+            end
+        end
+    end
+
+    self._savedProps = {}
+end
+
+local function shadowTableField(self, obj, key, replacement)
+    if type(obj) ~= "table" then
+        return false, "table unavailable"
+    end
+
+    local objState = self._savedProps[obj]
+    if not objState then
+        objState = {}
+        self._savedProps[obj] = objState
+    end
+
+    if not objState[key] then
+        objState[key] = { has = true, value = rawget(obj, key) }
+    end
+
+    rawset(obj, key, replacement)
 
     return true
 end
@@ -139,6 +181,27 @@ local function patchConstantByValue(self, fn, key, oldValue, newValue)
             local ok = pcall(setconstantFn, fn, index, newValue)
             if ok then
                 patched = patched + 1
+            end
+        end
+    end
+
+    if type(getprotos) == "function" then
+        local okProtos, protos = pcall(getprotos, fn)
+        if okProtos and type(protos) == "table" then
+            for protoIndex, proto in ipairs(protos) do
+                if type(proto) == "function" then
+                    local okProto, protoConstants = pcall(getconstantsFn, proto)
+                    if okProto and type(protoConstants) == "table" then
+                        for index = 1, #protoConstants do
+                            if protoConstants[index] == oldValue then
+                                savePatch(self, proto, key .. "_p" .. protoIndex .. "_" .. index, index, oldValue)
+                                if pcall(setconstantFn, proto, index, newValue) then
+                                    patched = patched + 1
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
     end
@@ -244,6 +307,7 @@ function Module:_applyConfig()
 
     restoreSavedPatches(self)
     restoreSavedFunctions(self)
+    restoreSavedProps(self)
 
     local enabled = self._enabled == true
 
@@ -297,11 +361,15 @@ function Module:_applyConfig()
         end
 
         if self.config.no_flash == true then
-            replaceFunction(self, "flash", function() end)
+            local flashFn = gunModule.flash
+            if type(flashFn) == "function" then
+                patchConstantByValue(self, flashFn, "flash_emit", 3, 0)
+                patchConstantByValue(self, flashFn, "flash_light", 0.05, 0)
+            end
 
             local smokeShootFn = gunModule.shoot
             if type(smokeShootFn) == "function" then
-                patchConstantByValue(self, smokeShootFn, "smoke", 3, 0)
+                patchConstantByValue(self, smokeShootFn, "smoke", "Smoke", "Smoke_Disabled")
             end
         end
 
@@ -313,11 +381,24 @@ function Module:_applyConfig()
         end
 
         if self.config.no_hit_effects == true then
-            replaceFunction(self, "bullet_hit", function() end)
+            local bulletHitFn = gunModule.bullet_hit
+            if type(bulletHitFn) == "function" then
+                patchConstantByValue(self, bulletHitFn, "hit_emit", 2, 0)
+                patchConstantByValue(self, bulletHitFn, "water_check", "Water", "Water_Disabled")
+            end
+
+            local parentModule = getmetatable(gunModule)
+            if type(parentModule) == "table" and type(parentModule.emit_blood) == "function" then
+                replaceFunction(self, parentModule, "emit_blood", function() end)
+            end
         end
 
         if self.config.no_kickback == true then
-            replaceFunction(self, "kickback", function() end)
+            shadowTableField(self, gunModule.anim, "Shoot", {
+                key1 = function() return { Completed = { Wait = function() end } } end,
+                key2 = function() return { Completed = { Wait = function() end } } end,
+                key3 = function() return { Completed = { Wait = function() end } } end,
+            })
         end
     end
 
@@ -431,8 +512,10 @@ function Module:unload()
 
     restoreSavedPatches(self)
     restoreSavedFunctions(self)
+    restoreSavedProps(self)
     self._savedConstants = {}
     self._savedFunctions = {}
+    self._savedProps = {}
     self._hooked = false
 
     if self._respawnConn then
