@@ -792,6 +792,10 @@ function Module:setFov(value)
     return true
 end
 
+function Module:getFov()
+    return self._fovRadius
+end
+
 function Module:setSmoothness(value)
     self._smoothness = clampNumber(value, 0.01, 1, 1)
     return true

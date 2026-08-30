@@ -34,6 +34,11 @@ local GADGET_TARGETS = {
 
 local TEAM_COLOR = Color3.fromRGB(0, 150, 0)
 
+local TARGET_PARTS = {
+    "head", "torso", "shoulder1", "shoulder2",
+    "arm1", "arm2", "hip1", "hip2", "leg1", "leg2",
+}
+
 local function isColorMatch(color, expected)
     if typeof(color) ~= "Color3" or typeof(expected) ~= "Color3" then
         return false
@@ -130,6 +135,10 @@ end
 
 function Module:_isInputActive()
     if self._activation == "always" then
+        return true
+    end
+
+    if self._activation == "visible_fov" then
         return true
     end
 
@@ -239,6 +248,159 @@ function Module:_isGadget(instance)
     return false
 end
 
+function Module:_getFovRadius()
+    local silentAim = self.shared and self.shared.modules and self.shared.modules.silent_aim
+    if silentAim then
+        if type(silentAim.getFov) == "function" then
+            local radius = tonumber(silentAim:getFov())
+            if radius then
+                return radius
+            end
+        elseif type(silentAim._fovRadius) == "number" then
+            return silentAim._fovRadius
+        end
+    end
+
+    return 60
+end
+
+function Module:_isVisible(targetPart)
+    local camera = Workspace.CurrentCamera
+    if not camera or not targetPart then
+        return false
+    end
+
+    if not self._viewmodelsFolder or not self._viewmodelsFolder.Parent then
+        self._viewmodelsFolder = Workspace:FindFirstChild("Viewmodels")
+    end
+
+    local origin = camera.CFrame.Position
+    local remaining = targetPart.Position - origin
+    if remaining.Magnitude <= 0.05 then
+        return true
+    end
+
+    local direction = remaining.Unit
+    local extraIgnore = {}
+
+    for _ = 1, 12 do
+        local blacklist = { camera }
+        if self._viewmodelsFolder then
+            local localViewmodel = self._viewmodelsFolder:FindFirstChild("LocalViewmodel")
+            if localViewmodel then
+                table.insert(blacklist, localViewmodel)
+            end
+        end
+        for _, instance in ipairs(extraIgnore) do
+            table.insert(blacklist, instance)
+        end
+
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = blacklist
+        params.IgnoreWater = true
+
+        local hit = Workspace:Raycast(origin, remaining, params)
+        if not hit or not hit.Instance then
+            return false
+        end
+
+        if hit.Instance == targetPart or hit.Instance:IsDescendantOf(targetPart.Parent) then
+            return true
+        end
+
+        if hit.Instance:IsA("BasePart") and hit.Instance.Transparency > 0 then
+            table.insert(extraIgnore, hit.Instance)
+            origin = hit.Position + direction * 0.05
+            remaining = targetPart.Position - origin
+            if remaining.Magnitude <= 0.05 then
+                return true
+            end
+        else
+            return false
+        end
+    end
+
+    return false
+end
+
+function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq)
+    if not part or not part:IsA("BasePart") or part.Transparency >= 1 then
+        return closestPart, closestDistSq
+    end
+
+    local camera = Workspace.CurrentCamera
+    if not camera then
+        return closestPart, closestDistSq
+    end
+
+    local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+    if not onScreen or screenPos.Z <= 0 then
+        return closestPart, closestDistSq
+    end
+
+    local dx = screenPos.X - mousePos.X
+    local dy = screenPos.Y - mousePos.Y
+    local distanceSq = dx * dx + dy * dy
+    local fovRadius = self:_getFovRadius()
+    if distanceSq > (fovRadius * fovRadius) or distanceSq >= closestDistSq then
+        return closestPart, closestDistSq
+    end
+
+    if not self:_isVisible(part) then
+        return closestPart, closestDistSq
+    end
+
+    return part, distanceSq
+end
+
+function Module:_getTargetInFov()
+    local camera = Workspace.CurrentCamera
+    if not camera then
+        return nil
+    end
+
+    if not self._viewmodelsFolder or not self._viewmodelsFolder.Parent then
+        self._viewmodelsFolder = Workspace:FindFirstChild("Viewmodels")
+    end
+
+    local mousePos = Vector2.new(camera.ViewportSize.X * 0.5, camera.ViewportSize.Y * 0.5)
+    local closestPart = nil
+    local closestDistSq = math.huge
+    local viewmodelTeams = self:_getViewmodelTeamMap()
+    local viewmodelsFolder = self._viewmodelsFolder
+
+    if viewmodelsFolder then
+        for _, viewmodel in ipairs(viewmodelsFolder:GetChildren()) do
+            if viewmodel.Name == "Viewmodel" then
+                local torso = viewmodel:FindFirstChild("torso")
+                local localViewmodel = viewmodelsFolder:FindFirstChild("LocalViewmodel")
+                if viewmodel ~= localViewmodel
+                    and not (torso and torso.Transparency == 1)
+                    and not (self._teamCheck and viewmodelTeams[viewmodel]) then
+                    for _, partName in ipairs(TARGET_PARTS) do
+                        local part = viewmodel:FindFirstChild(partName)
+                        closestPart, closestDistSq = self:_checkFovPart(
+                            part, mousePos, closestPart, closestDistSq
+                        )
+                    end
+                end
+            end
+        end
+    end
+
+    if self._targetGadgets then
+        for _, child in ipairs(Workspace:GetChildren()) do
+            local gadgetPart = self:_getGadgetTargetPart(child)
+            closestPart, closestDistSq = self:_checkFovPart(
+                gadgetPart, mousePos, closestPart, closestDistSq
+            )
+        end
+    end
+
+    return closestPart
+end
+
 function Module:_getTarget()
     local camera = Workspace.CurrentCamera
     if not camera then
@@ -313,7 +475,12 @@ function Module:_run()
 
     self:_checkMobileScopeConnection()
 
-    local target = self:_getTarget()
+    local target
+    if self._activation == "visible_fov" then
+        target = self:_getTargetInFov()
+    else
+        target = self:_getTarget()
+    end
 
     if target then
         if not self._targetAcquiredAt then
@@ -409,7 +576,14 @@ end
 
 function Module:setActivation(mode)
     local m = string.lower(tostring(mode))
-    local valid = {["always"] = true, ["mb1"] = true, ["mb2"] = true, ["mobile_hold"] = true, ["mobile_toggle"] = true}
+    local valid = {
+        ["always"] = true,
+        ["mb1"] = true,
+        ["mb2"] = true,
+        ["mobile_hold"] = true,
+        ["mobile_toggle"] = true,
+        ["visible_fov"] = true,
+    }
     if valid[m] then
         self._activation = m
         if m ~= "mobile_toggle" then

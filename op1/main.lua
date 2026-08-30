@@ -881,7 +881,8 @@ local function buildObsidianUi()
         Callback = setSilentAimSnaplines,
     })
     AimL:AddSlider("SA_FOV", {
-        Text = "FOV Radius", Default = 60, Min = 10, Max = 400, Rounding = 0,
+        Text = "Aim / Trigger FOV Radius", Default = 60, Min = 10, Max = 400, Rounding = 0,
+        Tooltip = "Used by aim assist and Visible FOV triggerbot mode",
         Callback = setSilentAimFov,
     })
     AimL:AddSlider("SA_Smooth", {
@@ -930,9 +931,9 @@ local function buildObsidianUi()
         Callback = setAutoShootTargetGadgets,
     })
     AimL:AddDropdown("SA_AutoShootActivation", {
-        Values = { "always", "mb1", "mb2", "mobile_hold", "mobile_toggle" }, Default = 1,
+        Values = { "always", "mb1", "mb2", "mobile_hold", "mobile_toggle", "visible_fov" }, Default = 1,
         Text = "TriggerBot Activation",
-        Tooltip = "Condition to enable auto shooting",
+        Tooltip = "Choose crosshair/button activation or visible enemy inside the FOV",
         Callback = setAutoShootActivation,
     })
     AimL:AddDivider()
