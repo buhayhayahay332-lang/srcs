@@ -1,5 +1,5 @@
 while true do end 
-local moduleRepo = "https://gitlab.com/potanginamo373-lang/op1/-/raw/main/"
+local moduleRepo = "https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/refs/heads/main/op1/"
 
 local MODULE_FILES = {
     shared_runtime     = "shared_runtime.lua",
