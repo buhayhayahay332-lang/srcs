@@ -6,15 +6,14 @@ local Module = {
     _gunModule = nil,
     _savedConstants = {},
     _savedFunctions = {},
+    _respawnConn = nil,
     config = {
         recoil_reduction = 0,
         horizontal_recoil = 0,
         no_spread = false,
         force_auto = false,
         firerate_multiplier = 1,
-        reload_speed_boost = 1,
         equip_speed_boost = 1,
-        silent_shots = false,
         no_flash = false,
         no_trails = false,
         no_hit_effects = false,
@@ -280,21 +279,12 @@ function Module:_applyConfig()
         if firerateBoost > 1 then
             local firerateRenderFn = gunModule.input_render
             if type(firerateRenderFn) == "function" then
-                patchConstantByValue(self, firerateRenderFn, "firerate", 60, 60 * firerateBoost)
+                patchConstantByValue(self, firerateRenderFn, "firerate", 60, 60 / firerateBoost)
             end
 
             local firerateShootFn = gunModule.input_shoot
             if type(firerateShootFn) == "function" then
-                patchConstantByValue(self, firerateShootFn, "firerate", 60, 60 * firerateBoost)
-            end
-        end
-
-        local reloadBoost = tonumber(self.config.reload_speed_boost) or 1
-        if reloadBoost > 1 then
-            local reloadBeginFn = gunModule.reload_begin
-            if type(reloadBeginFn) == "function" then
-                patchConstantByValue(self, reloadBeginFn, "reload_wait", 0.5, math.max(0.01, 0.5 / reloadBoost))
-                patchConstantByValue(self, reloadBeginFn, "single_load_wait", 0.15, math.max(0.01, 0.15 / reloadBoost))
+                patchConstantByValue(self, firerateShootFn, "firerate", 60, 60 / firerateBoost)
             end
         end
 
@@ -302,14 +292,7 @@ function Module:_applyConfig()
         if equipBoost > 1 then
             local equipFn = gunModule.equip
             if type(equipFn) == "function" then
-                patchConstantByValue(self, equipFn, "equip_pivot", 0.2, math.max(0.01, 0.2 / equipBoost))
-            end
-        end
-
-        if self.config.silent_shots == true then
-            local silentShootFn = gunModule.shoot
-            if type(silentShootFn) == "function" then
-                patchConstantByValue(self, silentShootFn, "silent", "Shoot", "SilencedShoot")
+                patchConstantByValue(self, equipFn, "equip_pivot", 0.2, 0.2 * equipBoost)
             end
         end
 
@@ -341,6 +324,42 @@ function Module:_applyConfig()
     return true
 end
 
+function Module:_enableRespawnReapply()
+    if self._respawnConn then
+        return
+    end
+
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    if not player then
+        return
+    end
+
+    self._respawnConn = player.CharacterAdded:Connect(function()
+        if not self._initialized then
+            return
+        end
+
+        for _, delay in ipairs({ 0.5, 2 }) do
+            task.delay(delay, function()
+                if not self._initialized then
+                    return
+                end
+
+                local wasEnabled = self._enabled == true
+                self._gunModule = nil
+                self._hooked = false
+
+                local ok = self:init(true)
+                if ok and wasEnabled and not self._enabled then
+                    self._enabled = true
+                    self:_applyConfig()
+                end
+            end)
+        end
+    end)
+end
+
 function Module:init(force)
     if self._initialized and not force then
         return true
@@ -365,6 +384,7 @@ function Module:init(force)
     end
 
     self._initialized = true
+    self:_enableRespawnReapply()
     return true
 end
 
@@ -414,6 +434,11 @@ function Module:unload()
     self._savedConstants = {}
     self._savedFunctions = {}
     self._hooked = false
+
+    if self._respawnConn then
+        self._respawnConn:Disconnect()
+        self._respawnConn = nil
+    end
 
     self._initialized = false
     return true

@@ -742,8 +742,7 @@ local function applyDefaults()
     setGunModEnabled(false); setGunModConfig("recoil_reduction", 0)
     setGunModConfig("horizontal_recoil", 0); setGunModConfig("no_spread", false)
     setGunModConfig("force_auto", false)
-    setGunModConfig("firerate_multiplier", 1); setGunModConfig("reload_speed_boost", 1)
-    setGunModConfig("equip_speed_boost", 1); setGunModConfig("silent_shots", false)
+    setGunModConfig("firerate_multiplier", 1); setGunModConfig("equip_speed_boost", 1)
     setGunModConfig("no_flash", false); setGunModConfig("no_trails", false)
     setGunModConfig("no_hit_effects", false); setGunModConfig("no_kickback", false)
 
@@ -968,26 +967,16 @@ local function buildObsidianUi()
         Callback = function(v) setGunModConfig("force_auto", v) end,
     })
     AimR:AddSlider("GM_FireRate", {
-        Text = "Fire Rate Multiplier", Default = 1, Min = 1, Max = 10, Rounding = 1, Suffix = "x",
+        Text = "Fire Rate Multiplier", Default = 1, Min = 1, Max = 10, Rounding = 0, Suffix = "x",
         Tooltip = "1 = off, higher = faster firing",
         Callback = function(v) setGunModConfig("firerate_multiplier", v) end,
     })
-    AimR:AddSlider("GM_ReloadBoost", {
-        Text = "Reload Speed", Default = 1, Min = 1, Max = 10, Rounding = 1, Suffix = "x",
-        Tooltip = "1 = off, higher = faster reload",
-        Callback = function(v) setGunModConfig("reload_speed_boost", v) end,
-    })
     AimR:AddSlider("GM_EquipBoost", {
-        Text = "Equip Speed", Default = 1, Min = 1, Max = 10, Rounding = 1, Suffix = "x",
+        Text = "Equip Speed", Default = 1, Min = 1, Max = 10, Rounding = 0, Suffix = "x",
         Tooltip = "1 = off, higher = faster equip/holster",
         Callback = function(v) setGunModConfig("equip_speed_boost", v) end,
     })
     AimR:AddDivider()
-    AimR:AddToggle("GM_SilentShots", {
-        Text = "Silent Shots", Default = false,
-        Tooltip = "Plays the suppressed shooting sound for every shot",
-        Callback = function(v) setGunModConfig("silent_shots", v) end,
-    })
     AimR:AddToggle("GM_NoFlash", {
         Text = "No Muzzle Flash / Smoke", Default = false,
         Tooltip = "Disables muzzle flash, flash light and smoke puffs",
