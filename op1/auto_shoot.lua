@@ -248,6 +248,19 @@ function Module:_isGadget(instance)
     return false
 end
 
+function Module:_getGadgetTargetPart(model)
+    if not model or not model:IsA("Model") then
+        return nil
+    end
+
+    local partName = GADGET_TARGETS[model.Name]
+    if not partName then
+        return nil
+    end
+
+    return model:FindFirstChild(partName)
+end
+
 function Module:_getFovRadius()
     local silentAim = self.shared and self.shared.modules and self.shared.modules.silent_aim
     if silentAim then
