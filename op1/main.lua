@@ -830,8 +830,8 @@ local Toggles      = Library.Toggles
 
 local function buildObsidianUi()
   local Window = Library:CreateWindow({
-        Title            = "ASTRO.WTF",
-        Icon             = 13129527031,
+        Title            = "SKII",
+        Icon             = 10824339328,
         Footer           = "discord.gg/NtBMqWXySm",
         NotifySide       = "Right",
         ShowCustomCursor = false,
