@@ -167,6 +167,56 @@ local function restoreReloadSpeedOverrides(self)
     self._reloadSpeedOverrides = setmetatable({}, { __mode = "k" })
 end
 
+local function acquireReloadSpeedOverride(self, gun)
+    local multiplier = tonumber(self.config.reload_speed_multiplier) or 1
+    local reloadState = gun and gun.states and gun.states.reload_speed
+
+    if not self._enabled or multiplier <= 1
+        or type(reloadState) ~= "table"
+        or type(reloadState.get) ~= "function"
+        or type(reloadState.set) ~= "function" then
+        return nil
+    end
+
+    local override = self._reloadSpeedOverrides[reloadState]
+    if not override then
+        local okGet, original = pcall(function()
+            return reloadState:get()
+        end)
+        if not okGet or type(original) ~= "number" then
+            return nil
+        end
+
+        local okSet = pcall(function()
+            reloadState:set(original / multiplier)
+        end)
+        if not okSet then
+            return nil
+        end
+
+        override = { original = original, depth = 0, holds = 0 }
+        self._reloadSpeedOverrides[reloadState] = override
+    end
+
+    override.holds = override.holds + 1
+    return reloadState, override
+end
+
+local function releaseReloadSpeedOverride(self, reloadState, expectedOverride)
+    local override = self._reloadSpeedOverrides[reloadState]
+    if override ~= expectedOverride then
+        return
+    end
+
+    override.holds = math.max(0, override.holds - 1)
+    if override.depth <= 0 and override.holds <= 0 then
+        self._reloadSpeedOverrides[reloadState] = nil
+        pcall(function()
+            reloadState:set(override.original)
+        end)
+    end
+end
+
 local function runWithReloadSpeedModifier(self, gun, callback)
     local multiplier = tonumber(self.config.reload_speed_multiplier) or 1
     local reloadState = gun and gun.states and gun.states.reload_speed
@@ -194,7 +244,7 @@ local function runWithReloadSpeedModifier(self, gun, callback)
             return callback()
         end
 
-        override = { original = original, depth = 0 }
+        override = { original = original, depth = 0, holds = 0 }
         self._reloadSpeedOverrides[reloadState] = override
     end
 
@@ -425,6 +475,50 @@ function Module:_installHook()
 
     installReloadSpeedHook("reload_begin")
     installReloadSpeedHook("cock_begin")
+
+    -- Some weapon instances create reload_thread before the method hook is
+    -- installed. Hooking reload as well covers those already-created guns.
+    installMethodHook(self, gunModule, "reload", function(state, gun, ...)
+        local args = table.pack(...)
+        local starting = args[2] == true
+        local reloadState, override
+
+        if starting then
+            reloadState, override = acquireReloadSpeedOverride(self, gun)
+        end
+
+        local results = table.pack(pcall(function()
+            return state.original(gun, table.unpack(args, 1, args.n))
+        end))
+
+        if not results[1] then
+            if reloadState then
+                releaseReloadSpeedOverride(self, reloadState, override)
+            end
+            error(results[2], 0)
+        end
+
+        if starting and reloadState and override then
+            task.defer(function()
+                task.wait()
+
+                local reloadThread = gun and gun.reload_thread
+                while self._initialized and reloadThread and reloadThread.running do
+                    task.wait()
+                end
+
+                releaseReloadSpeedOverride(self, reloadState, override)
+            end)
+        elseif not starting then
+            local currentState = gun and gun.states and gun.states.reload_speed
+            local currentOverride = currentState and self._reloadSpeedOverrides[currentState]
+            if currentState and currentOverride and currentOverride.holds > 0 then
+                releaseReloadSpeedOverride(self, currentState, currentOverride)
+            end
+        end
+
+        return table.unpack(results, 2, results.n)
+    end)
 
     local equipAnim = nil
     pcall(function()
