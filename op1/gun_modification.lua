@@ -7,6 +7,7 @@ local Module = {
     _savedConstants = {},
     _savedProps = {},
     _methodHooks = {},
+    _reloadSpeedOverrides = setmetatable({}, { __mode = "k" }),
     _respawnConn = nil,
     config = {
         recoil_reduction = 0,
@@ -15,6 +16,7 @@ local Module = {
         force_auto = false,
         firerate_multiplier = 1,
         equip_speed_boost = 1,
+        reload_speed_multiplier = 1,
         no_flash = false,
         no_trails = false,
         no_hit_effects = false,
@@ -115,11 +117,6 @@ local function installMethodHook(self, target, name, handler)
     }
 
     local replacement = function(...)
-        if type(setstackhidden) == "function" then
-            pcall(setstackhidden, 1, true)
-            pcall(setstackhidden, 1, 1, true)
-        end
-
         return handler(state, ...)
     end
 
@@ -156,6 +153,67 @@ local function restoreMethodHooks(self)
     end
 
     self._methodHooks = {}
+end
+
+local function restoreReloadSpeedOverrides(self)
+    for reloadState, override in pairs(self._reloadSpeedOverrides) do
+        if type(override) == "table" and override.original ~= nil then
+            pcall(function()
+                reloadState:set(override.original)
+            end)
+        end
+    end
+
+    self._reloadSpeedOverrides = setmetatable({}, { __mode = "k" })
+end
+
+local function runWithReloadSpeedModifier(self, gun, callback)
+    local multiplier = tonumber(self.config.reload_speed_multiplier) or 1
+    local reloadState = gun and gun.states and gun.states.reload_speed
+
+    if not self._enabled or multiplier <= 1
+        or type(reloadState) ~= "table"
+        or type(reloadState.get) ~= "function"
+        or type(reloadState.set) ~= "function" then
+        return callback()
+    end
+
+    local override = self._reloadSpeedOverrides[reloadState]
+    if not override then
+        local okGet, original = pcall(function()
+            return reloadState:get()
+        end)
+        if not okGet or type(original) ~= "number" then
+            return callback()
+        end
+
+        local okSet = pcall(function()
+            reloadState:set(original / multiplier)
+        end)
+        if not okSet then
+            return callback()
+        end
+
+        override = { original = original, depth = 0 }
+        self._reloadSpeedOverrides[reloadState] = override
+    end
+
+    override.depth = override.depth + 1
+    local results = table.pack(pcall(callback))
+    override.depth = override.depth - 1
+
+    if override.depth <= 0 then
+        self._reloadSpeedOverrides[reloadState] = nil
+        pcall(function()
+            reloadState:set(override.original)
+        end)
+    end
+
+    if not results[1] then
+        error(results[2], 0)
+    end
+
+    return table.unpack(results, 2, results.n)
 end
 
 local function restoreSavedProps(self)
@@ -356,6 +414,18 @@ function Module:_installHook()
         end)
     end
 
+    local function installReloadSpeedHook(methodName)
+        installMethodHook(self, gunModule, methodName, function(state, gun, ...)
+            local args = table.pack(...)
+            return runWithReloadSpeedModifier(self, gun, function()
+                return state.original(gun, table.unpack(args, 1, args.n))
+            end)
+        end)
+    end
+
+    installReloadSpeedHook("reload_begin")
+    installReloadSpeedHook("cock_begin")
+
     local equipAnim = nil
     pcall(function()
         equipAnim = gunModule.anim.Equip
@@ -544,6 +614,7 @@ end
 function Module:unload()
     self._enabled = false
 
+    restoreReloadSpeedOverrides(self)
     restoreMethodHooks(self)
     restoreSavedPatches(self)
     restoreSavedProps(self)
