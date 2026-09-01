@@ -58,7 +58,7 @@ local function getConstantsApi()
     return getconstants, setconstant
 end
 
-local function saveConstantPatch(self, fn, key, index, oldValue)
+local function savePatch(self, fn, key, index, oldValue)
     local fnState = self._savedConstants[fn]
     if not fnState then
         fnState = {}
@@ -70,7 +70,7 @@ local function saveConstantPatch(self, fn, key, index, oldValue)
     end
 end
 
-local function restoreSavedConstants(self)
+local function restoreSavedPatches(self)
     local _, setconstantFn = getConstantsApi()
     if not setconstantFn then
         return
@@ -90,25 +90,31 @@ end
 local function patchConstantByValue(self, fn, key, oldValue, newValue)
     local getconstantsFn, setconstantFn = getConstantsApi()
     if not getconstantsFn then
-        return false, "constant APIs unavailable"
+        return false, "C APIs unavailable"
     end
 
-    local okConstants, constants = pcall(getconstantsFn, fn)
-    if not okConstants or type(constants) ~= "table" then
-        return false, "constants unavailable"
+    local constants = getconstantsFn(fn)
+    if type(constants) ~= "table" then
+        return false, "C unavailable"
     end
 
     local patched = 0
+
     for index = 1, #constants do
         if constants[index] == oldValue then
-            saveConstantPatch(self, fn, key .. "_" .. index, index, oldValue)
-            if pcall(setconstantFn, fn, index, newValue) then
+            savePatch(self, fn, key .. "_" .. index, index, oldValue)
+            local ok = pcall(setconstantFn, fn, index, newValue)
+            if ok then
                 patched = patched + 1
             end
         end
     end
 
-    return patched > 0, patched > 0 and nil or "constant not found"
+    if patched > 0 then
+        return true
+    end
+
+    return false, "C not found"
 end
 
 local function getHookFunction(self)
@@ -144,6 +150,11 @@ local function installMethodHook(self, target, name, handler)
     }
 
     local replacement = function(...)
+        if type(setstackhidden) == "function" then
+            pcall(setstackhidden, 1, true)
+            pcall(setstackhidden, 1, 1, true)
+        end
+
         return handler(state, ...)
     end
 
@@ -430,17 +441,17 @@ function Module:_applyConfig()
         return false, tostring(gunErr or "gun module unavailable")
     end
 
-    restoreSavedConstants(self)
+    restoreSavedPatches(self)
     restoreSavedProps(self)
 
     local enabled = self._enabled == true
 
     if enabled then
+        -- equip speed: constant-patches the pivot_time = 0.2 values in equip
         local equipBoost = tonumber(self.config.equip_speed_boost) or 1
         if self.config.equip_speed_enabled == true and equipBoost > 1 then
             local equipFn = gunModule.equip
             if type(equipFn) == "function" then
-                -- GunModule.equip uses this value for the equip pivot timing.
                 patchConstantByValue(self, equipFn, "equip_pivot", 0.2, 0.2 * equipBoost)
             end
         end
@@ -562,12 +573,12 @@ end
 function Module:unload()
     self._enabled = false
 
-    restoreSavedConstants(self)
     restoreMethodHooks(self)
+    restoreSavedPatches(self)
     restoreSavedProps(self)
     self._savedProps = {}
-    self._savedConstants = {}
     self._stateBases = {}
+    self._savedConstants = {}
     self._hooked = false
 
     if self._respawnConn then
