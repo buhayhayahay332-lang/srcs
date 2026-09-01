@@ -1,4 +1,4 @@
-warn("xd 3")
+warn("xd 4")
 local moduleRepo = "https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/refs/heads/main/op1/"
 
 local MODULE_FILES = {
@@ -744,7 +744,7 @@ local function applyDefaults()
     setGunModConfig("horizontal_recoil", 0); setGunModConfig("no_spread", false)
     setGunModConfig("force_auto", false)
     setGunModConfig("firerate_rpm", 0); setGunModConfig("firerate_enabled", false)
-    setGunModConfig("equip_speed_boost", 1); setGunModConfig("equip_speed_enabled", false)
+    setGunModConfig("equip_speed_boost", 1)
     setGunModConfig("reload_speed_value", 1); setGunModConfig("reload_speed_enabled", false)
     setGunModConfig("no_flash", false); setGunModConfig("no_trails", false)
     setGunModConfig("no_hit_effects", false); setGunModConfig("no_kickback", false)
@@ -979,14 +979,9 @@ local function buildObsidianUi()
         Tooltip = "Sets the weapon's firerate directly (works on shotguns/bolts). Needs the toggle above on.",
         Callback = function(v) setGunModConfig("firerate_rpm", v) end,
     })
-    AimR:AddToggle("GM_EquipBoostEnabled", {
-        Text = "Enable Equip Speed", Default = false,
-        Tooltip = "Master switch for the Equip Speed slider below",
-        Callback = function(v) setGunModConfig("equip_speed_enabled", v) end,
-    })
     AimR:AddSlider("GM_EquipBoost", {
         Text = "Equip Speed", Default = 2, Min = 1, Max = 5, Rounding = 0, Suffix = "x",
-        Tooltip = "Higher = faster weapon swap / equip animations. Needs the toggle above on.",
+        Tooltip = "Higher = faster weapon swap / equip animations",
         Callback = function(v) setGunModConfig("equip_speed_boost", v) end,
     })
     AimR:AddToggle("GM_ReloadSpeedEnabled", {

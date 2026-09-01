@@ -17,7 +17,6 @@ local Module = {
         firerate_rpm = 0,
         firerate_enabled = false,
         equip_speed_boost = 1,
-        equip_speed_enabled = false,
         reload_speed_value = 1,
         reload_speed_enabled = false,
         no_flash = false,
@@ -372,6 +371,20 @@ function Module:_installHook()
         end)
     end
 
+    local equipAnim = nil
+    pcall(function()
+        equipAnim = gunModule.anim.Equip
+    end)
+    if type(equipAnim) == "table" and type(equipAnim.arm1_grab) == "function" then
+        installMethodHook(self, equipAnim, "arm1_grab", function(state, ...)
+            if self._enabled and (tonumber(self.config.equip_speed_boost) or 1) > 1 then
+                task.spawn(state.original, ...)
+                return { Completed = { Wait = function() end } }
+            end
+            return state.original(...)
+        end)
+    end
+
     installMethodHook(self, gunModule, "reload_begin", function(state, gun, ...)
         local reloadEnabled = self._enabled and self.config.reload_speed_enabled == true
         local reloadValue = tonumber(self.config.reload_speed_value) or 1
@@ -447,15 +460,6 @@ function Module:_applyConfig()
     local enabled = self._enabled == true
 
     if enabled then
-        -- equip speed: constant-patches the pivot_time = 0.2 values in equip
-        local equipBoost = tonumber(self.config.equip_speed_boost) or 1
-        if self.config.equip_speed_enabled == true and equipBoost > 1 then
-            local equipFn = gunModule.equip
-            if type(equipFn) == "function" then
-                patchConstantByValue(self, equipFn, "equip_pivot", 0.2, 0.2 * equipBoost)
-            end
-        end
-
         if self.config.no_kickback == true then
             shadowTableField(self, gunModule.anim, "Shoot", {
                 key1 = function() return { Completed = { Wait = function() end } } end,
