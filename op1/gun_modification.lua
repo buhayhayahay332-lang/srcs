@@ -13,9 +13,12 @@ local Module = {
         horizontal_recoil = 0,
         no_spread = false,
         force_auto = false,
-        firerate_multiplier = 1,
+        firerate_rpm = 0,
+        firerate_enabled = false,
         equip_speed_boost = 1,
-        reload_speed_multiplier = 1,
+        equip_speed_enabled = false,
+        reload_speed_value = 1,
+        reload_speed_enabled = false,
         no_flash = false,
         no_trails = false,
         no_hit_effects = false,
@@ -204,6 +207,27 @@ local function setGunStateScaled(self, gun, stateName, multiplier, enabled)
     end
 end
 
+local function setGunStateAbs(self, gun, stateName, value, enabled)
+    if not (gun and gun.states and gun.states[stateName]) then
+        return
+    end
+
+    local base = getStateBase(self, gun, stateName)
+    if base == nil then
+        return
+    end
+
+    local state = gun.states[stateName]
+    local goal = enabled and value or base
+
+    local current = state:get()
+    if current ~= goal then
+        pcall(function()
+            state:set(goal)
+        end)
+    end
+end
+
 function Module:setShared(shared)
     if type(shared) ~= "table" then
         return false, "shared must be table"
@@ -286,7 +310,7 @@ function Module:_installHook()
     end)
     if type(equipAnim) == "table" and type(equipAnim.arm1_grab) == "function" then
         installMethodHook(self, equipAnim, "arm1_grab", function(state, ...)
-            if self._enabled and (tonumber(self.config.equip_speed_boost) or 1) > 1 then
+            if self._enabled and self.config.equip_speed_enabled == true and (tonumber(self.config.equip_speed_boost) or 1) > 1 then
                 task.spawn(state.original, ...)
                 return { Completed = { Wait = function() end } }
             end
@@ -295,18 +319,15 @@ function Module:_installHook()
     end
 
     -- reload speed: reload_begin reads states.reload_speed once and uses it to
-    -- scale BOTH every reload animation duration and the task.wait steps, so
-    -- overwriting it makes the whole reload faster without desyncing. The state
-    -- is (re)set on every reload start, which also restores it to 1 whenever the
-    -- boost is off or changed. Installed unconditionally so slider changes apply
-    -- live to the next reload.
+    -- scale both the reload animation durations and the task.wait steps, so
+    -- setting an absolute reload-time value (0.1-1.0; 1 = stock, 0.1 = fastest)
+    -- makes the whole reload coherent. The state is (re)set on every reload
+    -- start, restoring to the gun's base whenever the mod is off.
     installMethodHook(self, gunModule, "reload_begin", function(state, gun, ...)
-        local reloadBoost = tonumber(self.config.reload_speed_multiplier) or 1
-        if gun and gun.states and gun.states.reload_speed then
-            pcall(function()
-                gun.states.reload_speed:set(reloadBoost > 1 and (1 / reloadBoost) or 1)
-            end)
-        end
+        local reloadEnabled = self._enabled and self.config.reload_speed_enabled == true
+        local reloadValue = tonumber(self.config.reload_speed_value) or 1
+        reloadValue = math.max(0.1, math.min(1, reloadValue))
+        setGunStateAbs(self, gun, "reload_speed", reloadValue, reloadEnabled)
         return state.original(gun, ...)
     end)
 
@@ -316,8 +337,8 @@ function Module:_installHook()
     end)
 
     installMethodHook(self, gunModule,"input_shoot", function(state, gun, ...)
-        local fireMult = tonumber(self.config.firerate_multiplier) or 1
-        setGunStateScaled(self, gun,"firerate", fireMult, self._enabled and fireMult > 1)
+        local rpm = tonumber(self.config.firerate_rpm) or 0
+        setGunStateAbs(self, gun, "firerate", rpm, self._enabled and self.config.firerate_enabled == true and rpm > 0)
         local forceAuto = self._enabled and self.config.force_auto == true
         if forceAuto then
             local hadAuto = rawget(gun,"automatic") ~= nil
@@ -335,8 +356,8 @@ function Module:_installHook()
     end)
 
     installMethodHook(self, gunModule,"input_render", function(state, gun, ...)
-        local fireMult = tonumber(self.config.firerate_multiplier)or 1
-        setGunStateScaled(self, gun,"firerate", fireMult, self._enabled and fireMult > 1)
+        local rpm = tonumber(self.config.firerate_rpm) or 0
+        setGunStateAbs(self, gun, "firerate", rpm, self._enabled and self.config.firerate_enabled == true and rpm > 0)
         local forceAuto = self._enabled and self.config.force_auto == true
         if forceAuto then
             local hadAuto = rawget(gun,"automatic") ~= nil

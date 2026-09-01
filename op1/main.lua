@@ -743,8 +743,9 @@ local function applyDefaults()
     setGunModEnabled(false); setGunModConfig("recoil_reduction", 0)
     setGunModConfig("horizontal_recoil", 0); setGunModConfig("no_spread", false)
     setGunModConfig("force_auto", false)
-    setGunModConfig("firerate_multiplier", 1); setGunModConfig("equip_speed_boost", 1)
-    setGunModConfig("reload_speed_multiplier", 1)
+    setGunModConfig("firerate_rpm", 0); setGunModConfig("firerate_enabled", false)
+    setGunModConfig("equip_speed_boost", 1); setGunModConfig("equip_speed_enabled", false)
+    setGunModConfig("reload_speed_value", 1); setGunModConfig("reload_speed_enabled", false)
     setGunModConfig("no_flash", false); setGunModConfig("no_trails", false)
     setGunModConfig("no_hit_effects", false); setGunModConfig("no_kickback", false)
 
@@ -968,20 +969,35 @@ local function buildObsidianUi()
         Text = "Force Automatic", Default = false,
         Callback = function(v) setGunModConfig("force_auto", v) end,
     })
+    AimR:AddToggle("GM_FireRateEnabled", {
+        Text = "Enable Fire Rate", Default = false,
+        Tooltip = "Master switch for the Fire Rate slider below",
+        Callback = function(v) setGunModConfig("firerate_enabled", v) end,
+    })
     AimR:AddSlider("GM_FireRate", {
-        Text = "Fire Rate Multiplier", Default = 1, Min = 1, Max = 10, Rounding = 0, Suffix = "x",
-        Tooltip = "1 = off, higher = faster firing",
-        Callback = function(v) setGunModConfig("firerate_multiplier", v) end,
+        Text = "Fire Rate (RPM)", Default = 0, Min = 0, Max = 2000, Rounding = 0, Suffix = " rpm",
+        Tooltip = "Sets the weapon's firerate directly (works on shotguns/bolts). Needs the toggle above on.",
+        Callback = function(v) setGunModConfig("firerate_rpm", v) end,
+    })
+    AimR:AddToggle("GM_EquipBoostEnabled", {
+        Text = "Enable Equip Speed", Default = false,
+        Tooltip = "Master switch for the Equip Speed slider below",
+        Callback = function(v) setGunModConfig("equip_speed_enabled", v) end,
     })
     AimR:AddSlider("GM_EquipBoost", {
-        Text = "Equip Speed", Default = 1, Min = 1, Max = 5, Rounding = 0, Suffix = "x",
-        Tooltip = "1 = off, higher = faster weapon swap / equip animations",
+        Text = "Equip Speed", Default = 2, Min = 1, Max = 5, Rounding = 0, Suffix = "x",
+        Tooltip = "Higher = faster weapon swap / equip animations. Needs the toggle above on.",
         Callback = function(v) setGunModConfig("equip_speed_boost", v) end,
     })
+    AimR:AddToggle("GM_ReloadSpeedEnabled", {
+        Text = "Enable Reload Speed", Default = false,
+        Tooltip = "Master switch for the Reload Speed slider below",
+        Callback = function(v) setGunModConfig("reload_speed_enabled", v) end,
+    })
     AimR:AddSlider("GM_ReloadSpeed", {
-        Text = "Reload Speed", Default = 1, Min = 1, Max = 5, Rounding = 0, Suffix = "x",
-        Tooltip = "1 = off, higher = faster reload and chamber animations",
-        Callback = function(v) setGunModConfig("reload_speed_multiplier", v) end,
+        Text = "Reload Speed", Default = 50, Min = 10, Max = 100, Rounding = 0, Suffix = "%",
+        Tooltip = "Lower = faster reload time. Needs the toggle above on.",
+        Callback = function(v) setGunModConfig("reload_speed_value", v / 100) end,
     })
     AimR:AddDivider()
     AimR:AddToggle("GM_NoFlash", {
