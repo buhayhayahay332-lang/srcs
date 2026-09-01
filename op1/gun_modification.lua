@@ -4,8 +4,8 @@ local Module = {
     _hooked = false,
     shared = nil,
     _gunModule = nil,
-    _savedConstants = {},
     _savedProps = {},
+    _stateBases = {},
     _methodHooks = {},
     _respawnConn = nil,
     config = {
@@ -44,43 +44,6 @@ local function getGunModule()
 
     Module._gunModule = gunModule
     return gunModule
-end
-
-local function getConstantsApi()
-    if type(getconstants) ~= "function" or type(setconstant) ~= "function" then
-        return nil
-    end
-
-    return getconstants, setconstant
-end
-
-local function savePatch(self, fn, key, index, oldValue)
-    local fnState = self._savedConstants[fn]
-    if not fnState then
-        fnState = {}
-        self._savedConstants[fn] = fnState
-    end
-
-    if not fnState[key] then
-        fnState[key] = { index = index, old = oldValue }
-    end
-end
-
-local function restoreSavedPatches(self)
-    local _, setconstantFn = getConstantsApi()
-    if not setconstantFn then
-        return
-    end
-
-    for fn, fnState in pairs(self._savedConstants) do
-        if type(fn) == "function" and type(fnState) == "table" then
-            for _, patch in pairs(fnState) do
-                if type(patch) == "table" and patch.index and patch.old ~= nil then
-                    pcall(setconstantFn, fn, patch.index, patch.old)
-                end
-            end
-        end
-    end
 end
 
 local function getHookFunction(self)
@@ -173,6 +136,7 @@ local function restoreSavedProps(self)
     end
 
     self._savedProps = {}
+    self._stateBases = {}
 end
 
 local function shadowTableField(self, obj, key, replacement)
@@ -195,90 +159,49 @@ local function shadowTableField(self, obj, key, replacement)
     return true
 end
 
-local function patchConstantByValue(self, fn, key, oldValue, newValue)
-    local getconstantsFn, setconstantFn = getConstantsApi()
-    if not getconstantsFn then
-        return false, "C APIs unavailable"
+local function getStateBase(self, gun, stateName)
+    local bases = self._stateBases[stateName]
+    if not bases then
+        bases = {}
+        self._stateBases[stateName] = bases
     end
 
-    local constants = getconstantsFn(fn)
-    if type(constants) ~= "table" then
-        return false, "C unavailable"
-    end
-
-    local patched = 0
-
-    for index = 1, #constants do
-        if constants[index] == oldValue then
-            savePatch(self, fn, key .. "_" .. index, index, oldValue)
-            local ok = pcall(setconstantFn, fn, index, newValue)
-            if ok then
-                patched = patched + 1
-            end
+    local base = bases[gun]
+    if base == nil then
+        local state = gun.states[stateName]
+        if state then
+            base = state:get()
+            bases[gun] = base
         end
     end
 
-    if patched > 0 then
-        return true
-    end
-
-    return false, "C not found"
+    return base
 end
 
-local function patchRecoilFunction(self, fn, vertical, horizontal)
-    local getconstantsFn, setconstantFn = getConstantsApi()
-    if not getconstantsFn then
-        return false, "C APIs unavailable"
+local function setGunStateScaled(self, gun, stateName, multiplier, enabled)
+    if not (gun and gun.states and gun.states[stateName]) then
+        return
     end
 
-    local constants = getconstantsFn(fn)
-    if type(constants) ~= "table" then
-        return false, "C unavailable"
+    local state = gun.states[stateName]
+    local base = getStateBase(self, gun, stateName)
+    if base == nil then
+        return
     end
 
-    local markerIndex = nil
-    for index = 1, #constants do
-        if constants[index] == "pc" then
-            markerIndex = index
-            break
-        end
+    local goal = nil
+    if enabled then
+        goal = base * multiplier
+    else
+        goal = base
     end
 
-    if markerIndex then
-        savePatch(self, fn, "recoil_marker", markerIndex, constants[markerIndex])
-        pcall(setconstantFn, fn, markerIndex, "tite")
-
-        local verticalIndex = markerIndex + 1
-        if type(constants[verticalIndex]) == "number" then
-            savePatch(self, fn, "recoil_vertical", verticalIndex, constants[verticalIndex])
-            pcall(setconstantFn, fn, verticalIndex, vertical)
-        end
-
-        local horizontalIndex = markerIndex + 2
-        if type(constants[horizontalIndex]) == "number" then
-            savePatch(self, fn, "recoil_horizontal", horizontalIndex, constants[horizontalIndex])
-            pcall(setconstantFn, fn, horizontalIndex, horizontal)
-        end
-
-        return true
+    local current = state:get()
+    if current ~= goal then
+        pcall(function()
+            state:set(goal)
+        end)
     end
-
-    local patched = 0
-    for index = 1, #constants do
-        if type(constants[index]) == "number" then
-            if patched == 0 then
-                savePatch(self, fn, "recoil_vertical", index, constants[index])
-                pcall(setconstantFn, fn, index, vertical)
-                patched = patched + 1
-            elseif patched == 1 then
-                savePatch(self, fn, "recoil_horizontal", index, constants[index])
-                pcall(setconstantFn, fn, index, horizontal)
-                return true
-            end
-        end
-    end
-
-    return patched > 0
 end
 
 function Module:setShared(shared)
@@ -387,6 +310,57 @@ function Module:_installHook()
         return state.original(gun, ...)
     end)
 
+    installMethodHook(self, gunModule, "send_shoot", function(state, gun, ...)
+        setGunStateScaled(self, gun,"spread", 0, self._enabled and self.config.no_spread == true)
+        return state.original(gun, ...)
+    end)
+
+    installMethodHook(self, gunModule,"input_shoot", function(state, gun, ...)
+        local fireMult = tonumber(self.config.firerate_multiplier) or 1
+        setGunStateScaled(self, gun,"firerate", fireMult, self._enabled and fireMult > 1)
+        local forceAuto = self._enabled and self.config.force_auto == true
+        if forceAuto then
+            local hadAuto = rawget(gun,"automatic") ~= nil
+            local oldAuto = rawget(gun,"automatic")
+            rawset(gun,"automatic",true)
+            state.original(gun, ...)
+            if hadAuto then
+                rawset(gun,"automatic",oldAuto)
+            else
+                rawset(gun,"automatic",nil)
+            end
+        else
+            state.original(gun, ...)
+        end
+    end)
+
+    installMethodHook(self, gunModule,"input_render", function(state, gun, ...)
+        local fireMult = tonumber(self.config.firerate_multiplier)or 1
+        setGunStateScaled(self, gun,"firerate", fireMult, self._enabled and fireMult > 1)
+        local forceAuto = self._enabled and self.config.force_auto == true
+        if forceAuto then
+            local hadAuto = rawget(gun,"automatic") ~= nil
+            local oldAuto = rawget(gun,"automatic")
+            rawset(gun,"automatic",true)
+            state.original(gun, ...)
+            if hadAuto then
+                rawset(gun,"automatic",oldAuto)
+            else
+                rawset(gun,"automatic",nil)
+            end
+        else
+            state.original(gun, ...)
+        end
+    end)
+
+    installMethodHook(self, gunModule,"recoil_function", function(state, gun, ...)
+        local recoilMult = 1 - (tonumber(self.config.recoil_reduction)or 0)
+        local horizontalMult = 1 - (tonumber(self.config.horizontal_recoil)or 0)
+        setGunStateScaled(self, gun,"recoil_up", recoilMult, self._enabled)
+        setGunStateScaled(self, gun,"recoil_side", horizontalMult, self._enabled)
+        return state.original(gun, ...)
+    end)
+
     self._hooked = true
     return true
 end
@@ -397,53 +371,11 @@ function Module:_applyConfig()
         return false, tostring(gunErr or "gun module unavailable")
     end
 
-    restoreSavedPatches(self)
     restoreSavedProps(self)
 
     local enabled = self._enabled == true
 
     if enabled then
-        local recoilValue = tonumber(self.config.recoil_reduction) or 0
-        local horizontalValue = tonumber(self.config.horizontal_recoil) or 0
-
-        local recoilFn = gunModule.recoil_function
-        if type(recoilFn) == "function" then
-            patchRecoilFunction(self, recoilFn, recoilValue, horizontalValue)
-        end
-
-        if self.config.no_spread == true then
-            local sendShootFn = gunModule.send_shoot
-            if type(sendShootFn) == "function" then
-                patchConstantByValue(self, sendShootFn, "spread", 100, 0)
-            end
-        end
-
-        if self.config.force_auto == true then
-            local inputShootFn = gunModule.input_shoot
-            if type(inputShootFn) == "function" then
-                patchConstantByValue(self, inputShootFn, "auto", "automatic", "tag")
-            end
-
-            local inputRenderFn = gunModule.input_render
-            if type(inputRenderFn) == "function" then
-                patchConstantByValue(self, inputRenderFn, "auto", "automatic", "tag")
-            end
-        end
-
-        local firerateBoost = tonumber(self.config.firerate_multiplier) or 1
-        if firerateBoost > 1 then
-            local firerateRenderFn = gunModule.input_render
-            if type(firerateRenderFn) == "function" then
-                patchConstantByValue(self, firerateRenderFn, "firerate", 60, 60 / firerateBoost)
-            end
-
-            local firerateShootFn = gunModule.input_shoot
-            if type(firerateShootFn) == "function" then
-                patchConstantByValue(self, firerateShootFn, "firerate", 60, 60 / firerateBoost)
-            end
-        end
-
-
         if self.config.no_kickback == true then
             shadowTableField(self, gunModule.anim, "Shoot", {
                 key1 = function() return { Completed = { Wait = function() end } } end,
@@ -562,10 +494,9 @@ function Module:unload()
     self._enabled = false
 
     restoreMethodHooks(self)
-    restoreSavedPatches(self)
     restoreSavedProps(self)
-    self._savedConstants = {}
     self._savedProps = {}
+    self._stateBases = {}
     self._hooked = false
 
     if self._respawnConn then
