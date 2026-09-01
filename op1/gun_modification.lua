@@ -4,6 +4,7 @@ local Module = {
     _hooked = false,
     shared = nil,
     _gunModule = nil,
+    _savedConstants = {},
     _savedProps = {},
     _stateBases = {},
     _methodHooks = {},
@@ -49,6 +50,67 @@ local function getGunModule()
     return gunModule
 end
 
+local function getConstantsApi()
+    if type(getconstants) ~= "function" or type(setconstant) ~= "function" then
+        return nil
+    end
+
+    return getconstants, setconstant
+end
+
+local function saveConstantPatch(self, fn, key, index, oldValue)
+    local fnState = self._savedConstants[fn]
+    if not fnState then
+        fnState = {}
+        self._savedConstants[fn] = fnState
+    end
+
+    if not fnState[key] then
+        fnState[key] = { index = index, old = oldValue }
+    end
+end
+
+local function restoreSavedConstants(self)
+    local _, setconstantFn = getConstantsApi()
+    if not setconstantFn then
+        return
+    end
+
+    for fn, fnState in pairs(self._savedConstants) do
+        if type(fn) == "function" and type(fnState) == "table" then
+            for _, patch in pairs(fnState) do
+                if type(patch) == "table" and patch.index and patch.old ~= nil then
+                    pcall(setconstantFn, fn, patch.index, patch.old)
+                end
+            end
+        end
+    end
+end
+
+local function patchConstantByValue(self, fn, key, oldValue, newValue)
+    local getconstantsFn, setconstantFn = getConstantsApi()
+    if not getconstantsFn then
+        return false, "constant APIs unavailable"
+    end
+
+    local okConstants, constants = pcall(getconstantsFn, fn)
+    if not okConstants or type(constants) ~= "table" then
+        return false, "constants unavailable"
+    end
+
+    local patched = 0
+    for index = 1, #constants do
+        if constants[index] == oldValue then
+            saveConstantPatch(self, fn, key .. "_" .. index, index, oldValue)
+            if pcall(setconstantFn, fn, index, newValue) then
+                patched = patched + 1
+            end
+        end
+    end
+
+    return patched > 0, patched > 0 and nil or "constant not found"
+end
+
 local function getHookFunction(self)
     if type(hookfunction) == "function" then
         return hookfunction
@@ -82,11 +144,6 @@ local function installMethodHook(self, target, name, handler)
     }
 
     local replacement = function(...)
-        if type(setstackhidden) == "function" then
-            pcall(setstackhidden, 1, true)
-            pcall(setstackhidden, 1, 1, true)
-        end
-
         return handler(state, ...)
     end
 
@@ -304,23 +361,6 @@ function Module:_installHook()
         end)
     end
 
-    local equipAnim = nil
-    pcall(function()
-        equipAnim = gunModule.anim.Equip
-    end)
-    if type(equipAnim) == "table" and type(equipAnim.arm1_grab) == "function" then
-        installMethodHook(self, equipAnim, "arm1_grab", function(state, ...)
-            if self._enabled and self.config.equip_speed_enabled == true and (tonumber(self.config.equip_speed_boost) or 1) > 1 then
-                -- don't block the equip flow: kick the animation off detached and
-                -- hand the caller an instant "completed" handle so the equip flow
-                -- isn't blocked on .Completed:Wait()
-                task.spawn(state.original, ...)
-                return { Completed = { Wait = function() end } }
-            end
-            return state.original(...)
-        end)
-    end
-
     installMethodHook(self, gunModule, "reload_begin", function(state, gun, ...)
         local reloadEnabled = self._enabled and self.config.reload_speed_enabled == true
         local reloadValue = tonumber(self.config.reload_speed_value) or 1
@@ -390,11 +430,21 @@ function Module:_applyConfig()
         return false, tostring(gunErr or "gun module unavailable")
     end
 
+    restoreSavedConstants(self)
     restoreSavedProps(self)
 
     local enabled = self._enabled == true
 
     if enabled then
+        local equipBoost = tonumber(self.config.equip_speed_boost) or 1
+        if self.config.equip_speed_enabled == true and equipBoost > 1 then
+            local equipFn = gunModule.equip
+            if type(equipFn) == "function" then
+                -- GunModule.equip uses this value for the equip pivot timing.
+                patchConstantByValue(self, equipFn, "equip_pivot", 0.2, 0.2 * equipBoost)
+            end
+        end
+
         if self.config.no_kickback == true then
             shadowTableField(self, gunModule.anim, "Shoot", {
                 key1 = function() return { Completed = { Wait = function() end } } end,
@@ -512,9 +562,11 @@ end
 function Module:unload()
     self._enabled = false
 
+    restoreSavedConstants(self)
     restoreMethodHooks(self)
     restoreSavedProps(self)
     self._savedProps = {}
+    self._savedConstants = {}
     self._stateBases = {}
     self._hooked = false
 
