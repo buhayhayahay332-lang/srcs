@@ -311,6 +311,9 @@ function Module:_installHook()
     if type(equipAnim) == "table" and type(equipAnim.arm1_grab) == "function" then
         installMethodHook(self, equipAnim, "arm1_grab", function(state, ...)
             if self._enabled and self.config.equip_speed_enabled == true and (tonumber(self.config.equip_speed_boost) or 1) > 1 then
+                -- don't block the equip flow: kick the animation off detached and
+                -- hand the caller an instant "completed" handle so the equip flow
+                -- isn't blocked on .Completed:Wait()
                 task.spawn(state.original, ...)
                 return { Completed = { Wait = function() end } }
             end
@@ -318,11 +321,6 @@ function Module:_installHook()
         end)
     end
 
-    -- reload speed: reload_begin reads states.reload_speed once and uses it to
-    -- scale both the reload animation durations and the task.wait steps, so
-    -- setting an absolute reload-time value (0.1-1.0; 1 = stock, 0.1 = fastest)
-    -- makes the whole reload coherent. The state is (re)set on every reload
-    -- start, restoring to the gun's base whenever the mod is off.
     installMethodHook(self, gunModule, "reload_begin", function(state, gun, ...)
         local reloadEnabled = self._enabled and self.config.reload_speed_enabled == true
         local reloadValue = tonumber(self.config.reload_speed_value) or 1

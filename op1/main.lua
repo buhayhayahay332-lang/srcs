@@ -975,7 +975,7 @@ local function buildObsidianUi()
         Callback = function(v) setGunModConfig("firerate_enabled", v) end,
     })
     AimR:AddSlider("GM_FireRate", {
-        Text = "Fire Rate (RPM)", Default = 0, Min = 0, Max = 2000, Rounding = 0, Suffix = " rpm",
+        Text = "Fire Rate (RPM)", Default = 0, Min = 0, Max = 1500, Rounding = 0, Suffix = " rpm",
         Tooltip = "Sets the weapon's firerate directly (works on shotguns/bolts). Needs the toggle above on.",
         Callback = function(v) setGunModConfig("firerate_rpm", v) end,
     })
