@@ -133,6 +133,11 @@ function Module:_isMobileScopePressed()
     return ok and guiState and guiState.Name == "Press" or false
 end
 
+function Module:_isAimHeld()
+    return self:_isMobileScopePressed()
+        or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+end
+
 function Module:_isInputActive()
     if self._activation == "always" then
         return true
@@ -140,6 +145,10 @@ function Module:_isInputActive()
 
     if self._activation == "visible_fov" then
         return true
+    end
+
+    if self._activation == "aiming_aim_fov" then
+        return self:_isAimHeld()
     end
 
     if self._activation == "mobile_hold" then
@@ -489,7 +498,7 @@ function Module:_run()
     self:_checkMobileScopeConnection()
 
     local target
-    if self._activation == "visible_fov" then
+    if self._activation == "visible_fov" or self._activation == "aiming_aim_fov" then
         target = self:_getTargetInFov()
     else
         target = self:_getTarget()
@@ -589,6 +598,10 @@ end
 
 function Module:setActivation(mode)
     local m = string.lower(tostring(mode))
+    local aliases = {
+        ["aiming + aim fov"] = "aiming_aim_fov",
+    }
+    m = aliases[m] or m
     local valid = {
         ["always"] = true,
         ["mb1"] = true,
@@ -596,6 +609,7 @@ function Module:setActivation(mode)
         ["mobile_hold"] = true,
         ["mobile_toggle"] = true,
         ["visible_fov"] = true,
+        ["aiming_aim_fov"] = true,
     }
     if valid[m] then
         self._activation = m

@@ -937,9 +937,9 @@ local function buildObsidianUi()
         Callback = setAutoShootTargetGadgets,
     })
     AimL:AddDropdown("SA_AutoShootActivation", {
-        Values = { "always", "mb1", "mb2", "mobile_hold", "mobile_toggle", "visible_fov" }, Default = 1,
+        Values = { "always", "mb1", "mb2", "mobile_hold", "mobile_toggle", "visible_fov", "Aiming + Aim FOV" }, Default = 1,
         Text = "TriggerBot Activation",
-        Tooltip = "Choose crosshair/button activation or visible enemy inside the FOV",
+        Tooltip = "Choose crosshair/button activation, visible FOV, or aim-held FOV",
         Callback = setAutoShootActivation,
     })
     AimL:AddDivider()
