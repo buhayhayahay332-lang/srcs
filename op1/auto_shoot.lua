@@ -24,23 +24,15 @@ local Module = {
     _viewmodelsFolder = nil,
 }
 
--- Port of the game's bullet-hit rules (Util.ray_damage, real-shot path):
--- returns true when a bullet can pass through this part, false when the part
--- stops bullets. Opaque (Transparency == 0) parts that are CanCollide or
--- "Soft"-tagged stop bullets; "Hard"-tagged parts stop bullets; only fully
--- transparent, non-colliding, or Soft + partially-transparent parts let
--- bullets through.
 local function canBulletPass(inst)
     local parent = inst.Parent
     local soft = (inst:GetAttribute("Soft") == true) or (typeof(parent) == "Instance" and parent:GetAttribute("Soft") == true)
     local hard = (inst:GetAttribute("Hard") == true) or (typeof(parent) == "Instance" and parent:GetAttribute("Hard") == true)
 
     if (inst.CanCollide == true or soft) and inst.Transparency < 1 then
-        -- non-soft cover always stops; Soft + fully opaque stops too (real-shot path)
         if not soft or inst.Transparency == 0 then
             return false
         end
-        -- Soft + see-through: the bullet continues
         return true
     end
 
@@ -55,10 +47,6 @@ local function canBulletPass(inst)
     return true
 end
 
--- Game-accurate line of sight: returns true when a bullet can reach targetPos
--- without being stopped by a wall, matching the game's own bullet raycast.
--- Soft walls are penetrated only as far as the game allows; Hard walls and
--- opaque colliding cover always block.
 local function checkLineOfSight(origin, targetPos, targetRoot, ignoreList)
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
