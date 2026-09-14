@@ -55,107 +55,6 @@ local GADGET_TARGETS = {
 
 local TEAM_COLOR = Color3.fromRGB(0, 150, 0)
 
-local function canBulletPass(inst)
-    local parent = inst.Parent
-    local soft = (inst:GetAttribute("Soft") == true) or (typeof(parent) == "Instance" and parent:GetAttribute("Soft") == true)
-    local hard = (inst:GetAttribute("Hard") == true) or (typeof(parent) == "Instance" and parent:GetAttribute("Hard") == true)
-
-    if (inst.CanCollide == true or soft) and inst.Transparency < 1 then
-        if not soft or inst.Transparency == 0 then
-            return false
-        end
-        return true
-    end
-
-    if hard then
-        return false
-    end
-
-    if inst.CanQuery == true and inst.CanCollide == true and not soft then
-        return false
-    end
-
-    return true
-end
-
-local function checkLineOfSight(originPos, targetPos, targetRoot, ignoreList, camera)
-    local cam = camera or Workspace.CurrentCamera
-
-    local overlapParams = OverlapParams.new()
-    overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-    overlapParams.FilterDescendantsInstances = ignoreList or {}
-    local overlapping = Workspace:GetPartBoundsInBox(
-        CFrame.new(originPos),
-        Vector3.new(0.6, 0.6, 0.6),
-        overlapParams
-    )
-    for _, overlappingPart in ipairs(overlapping) do
-        if typeof(targetRoot) ~= "Instance" or not overlappingPart:IsDescendantOf(targetRoot) then
-            if not canBulletPass(overlappingPart) then
-                return false
-            end
-        end
-    end
-
-    local lookDir = (targetPos - originPos).Unit or Vector3.new(0, 0, -1)
-    local rightDir = (cam and cam.CFrame.RightVector) or Vector3.new(1, 0, 0)
-    local upDir = (cam and cam.CFrame.UpVector) or Vector3.new(0, 1, 0)
-
-    local samples = {
-        originPos,
-        originPos - lookDir * 0.6,
-        originPos + lookDir * 0.35,
-        originPos + upDir * 0.15,
-        originPos + rightDir * 0.15,
-        originPos - rightDir * 0.15,
-    }
-
-    for _, sampleOrigin in ipairs(samples) do
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = ignoreList or {}
-        params.IgnoreWater = true
-
-        local currentOrigin = sampleOrigin
-        local dir = targetPos - currentOrigin
-        if dir.Magnitude <= 0.05 then
-            continue
-        end
-        local stepDir = dir.Unit
-
-        local sampleClear = true
-        for _ = 1, 16 do
-            local hit = Workspace:Raycast(currentOrigin, dir, params)
-            if not hit or not hit.Instance then
-                break
-            end
-
-            local inst = hit.Instance
-
-            if inst == targetRoot or (typeof(targetRoot) == "Instance" and inst:IsDescendantOf(targetRoot)) then
-                break
-            end
-
-            if not canBulletPass(inst) then
-                sampleClear = false
-                break
-            end
-
-            params:AddToFilter(inst)
-            currentOrigin = hit.Position + stepDir * 0.05
-            dir = targetPos - currentOrigin
-            if dir.Magnitude <= 0.05 then
-                break
-            end
-        end
-
-        if not sampleClear then
-            return false
-        end
-    end
-
-    return true
-end
 local function clampNumber(v, minV, maxV, defaultV)
     local n = tonumber(v)
     if not n then
@@ -334,12 +233,12 @@ function Module:_isMobileScopePressed()
     return ok and guiState and guiState.Name == "Press" or false
 end
 
-function Module:_checkPart(part, mousePos, closestPart, closestDistSq)
+function Module:_checkPart(part, mousePos, closestPart, closestDistSq, targetModel)
     if not part or not part:IsA("BasePart") then
         return closestPart, closestDistSq
     end
 
-    if self._visibleCheck and self:_isWallBlocked(part) then
+    if self._visibleCheck and self:_isWallBlocked(part, targetModel) then
         return closestPart, closestDistSq
     end
 
@@ -394,7 +293,7 @@ function Module:_getGadgetTargetPart(model)
     return model:FindFirstChild(partName)
 end
 
-function Module:_isWallBlocked(targetPart)
+function Module:_isWallBlocked(targetPart, targetModel)
     local camera = Workspace.CurrentCamera
     if not camera or not targetPart then
         return false
@@ -404,25 +303,61 @@ function Module:_isWallBlocked(targetPart)
         self._viewmodelsFolder = Workspace:FindFirstChild("Viewmodels")
     end
 
-    local ignore = { camera }
-    if self._viewmodelsFolder then
-        local localViewmodel = self._viewmodelsFolder:FindFirstChild("LocalViewmodel")
-        if localViewmodel then
-            table.insert(ignore, localViewmodel)
+    local origin = camera.CFrame.Position
+    local destination = targetPart.Position
+    local direction = destination - origin
+    if direction.Magnitude <= 0 then
+        return false
+    end
+
+    local localPlayer = Players and Players.LocalPlayer
+    local localCharacter = localPlayer and localPlayer.Character
+
+    local extraIgnore = {}
+
+    for _ = 1, 12 do
+        local blacklist = { camera }
+        local viewmodelsFolder = self._viewmodelsFolder
+        if viewmodelsFolder then
+            local localViewmodel = viewmodelsFolder:FindFirstChild("LocalViewmodel")
+            if localViewmodel then
+                table.insert(blacklist, localViewmodel)
+            end
+        end
+        if localCharacter then
+            table.insert(blacklist, localCharacter)
+        end
+
+        for _, inst in ipairs(extraIgnore) do
+            table.insert(blacklist, inst)
+        end
+
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = blacklist
+        params.IgnoreWater = true
+
+        local hit = Workspace:Raycast(origin, direction, params)
+        if not hit or not hit.Instance then
+            return false
+        end
+
+        local instance = hit.Instance
+
+        if instance == targetPart
+            or (targetModel and instance:IsDescendantOf(targetModel))
+            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
+            return false
+        end
+
+        if not instance.CanCollide or instance.Transparency >= 0.95 or instance.Name == "BulletHole" or instance:IsA("Beam") or (instance:IsA("BasePart") and instance.Transparency > 0) then
+            table.insert(extraIgnore, instance)
+        else
+            return true
         end
     end
 
-    local localCharacter = Players.LocalPlayer and Players.LocalPlayer.Character
-    if localCharacter then
-        table.insert(ignore, localCharacter)
-    end
-
-    local targetRoot = targetPart.Parent
-    if targetPart:IsA("Model") then
-        targetRoot = targetPart
-    end
-
-    return not checkLineOfSight(camera.CFrame.Position, targetPart.Position, targetRoot, ignore, camera)
+    return true
 end
 
 function Module:_getClosestTargetToCursor()
@@ -450,11 +385,11 @@ function Module:_getClosestTargetToCursor()
 
                 if self._targetMode == "head_only" then
                     local head = vm:FindFirstChild("head")
-                    closestPart, closestDistSq = self:_checkPart(head, mousePos, closestPart, closestDistSq)
+                    closestPart, closestDistSq = self:_checkPart(head, mousePos, closestPart, closestDistSq, vm)
                 else
                     for _, partName in ipairs(TARGET_PARTS) do
                         local part = vm:FindFirstChild(partName)
-                        closestPart, closestDistSq = self:_checkPart(part, mousePos, closestPart, closestDistSq)
+                        closestPart, closestDistSq = self:_checkPart(part, mousePos, closestPart, closestDistSq, vm)
                     end
                 end
             end
@@ -465,7 +400,7 @@ function Module:_getClosestTargetToCursor()
         for _, child in ipairs(Workspace:GetChildren()) do
             local gadgetPart = self:_getGadgetTargetPart(child)
             if gadgetPart then
-                closestPart, closestDistSq = self:_checkPart(gadgetPart, mousePos, closestPart, closestDistSq)
+                closestPart, closestDistSq = self:_checkPart(gadgetPart, mousePos, closestPart, closestDistSq, child)
             end
         end
     end
