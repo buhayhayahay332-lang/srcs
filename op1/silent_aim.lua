@@ -55,6 +55,80 @@ local GADGET_TARGETS = {
 
 local TEAM_COLOR = Color3.fromRGB(0, 150, 0)
 
+-- Port of the game's bullet-hit rules (Util.ray_damage, real-shot path):
+-- returns true when a bullet can pass through this part, false when the part
+-- stops bullets. Opaque (Transparency == 0) parts that are CanCollide or
+-- "Soft"-tagged stop bullets; "Hard"-tagged parts stop bullets; only fully
+-- transparent, non-colliding, or Soft + partially-transparent parts let
+-- bullets through.
+local function canBulletPass(inst)
+    local parent = inst.Parent
+    local soft = (inst:GetAttribute("Soft") == true) or (typeof(parent) == "Instance" and parent:GetAttribute("Soft") == true)
+    local hard = (inst:GetAttribute("Hard") == true) or (typeof(parent) == "Instance" and parent:GetAttribute("Hard") == true)
+
+    if (inst.CanCollide == true or soft) and inst.Transparency < 1 then
+        -- non-soft cover always stops; Soft + fully opaque stops too (real-shot path)
+        if not soft or inst.Transparency == 0 then
+            return false
+        end
+        -- Soft + see-through: the bullet continues
+        return true
+    end
+
+    if hard then
+        return false
+    end
+
+    if inst.CanQuery == true and inst.CanCollide == true and not soft then
+        return false
+    end
+
+    return true
+end
+
+-- Game-accurate line of sight: returns true when a bullet can reach targetPos
+-- without being stopped by a wall, matching the game's own bullet raycast.
+-- Soft walls are penetrated only as far as the game allows; Hard walls and
+-- opaque colliding cover always block.
+local function checkLineOfSight(origin, targetPos, targetRoot, ignoreList)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = ignoreList or {}
+    params.IgnoreWater = true
+
+    local dir = targetPos - origin
+    if dir.Magnitude <= 0.05 then
+        return true
+    end
+    local stepDir = dir.Unit
+
+    for _ = 1, 16 do
+        local hit = Workspace:Raycast(origin, dir, params)
+        if not hit or not hit.Instance then
+            return true
+        end
+
+        local inst = hit.Instance
+
+        if inst == targetRoot or (typeof(targetRoot) == "Instance" and inst:IsDescendantOf(targetRoot)) then
+            return true
+        end
+
+        if not canBulletPass(inst) then
+            return false
+        end
+
+        params:AddToFilter(inst)
+        origin = hit.Position + stepDir * 0.05
+        dir = targetPos - origin
+        if dir.Magnitude <= 0.05 then
+            return true
+        end
+    end
+
+    return true
+end
+
 local function clampNumber(v, minV, maxV, defaultV)
     local n = tonumber(v)
     if not n then
@@ -295,7 +369,7 @@ end
 
 function Module:_isWallBlocked(targetPart)
     local camera = Workspace.CurrentCamera
-    if not camera then
+    if not camera or not targetPart then
         return false
     end
 
@@ -303,64 +377,25 @@ function Module:_isWallBlocked(targetPart)
         self._viewmodelsFolder = Workspace:FindFirstChild("Viewmodels")
     end
 
-    local origin = camera.CFrame.Position
-    local direction = targetPart.Position - origin
-    if direction.Magnitude <= 0 then
-        return false
-    end
-
-    local extraIgnore = {}
-    local currentOrigin = origin
-    local remaining = direction
-    local stepDir = direction.Unit
-
-    for _ = 1, 12 do
-        local blacklist = { camera }
-        local viewmodelsFolder = self._viewmodelsFolder
-        if viewmodelsFolder then
-            local localViewmodel = viewmodelsFolder:FindFirstChild("LocalViewmodel")
-            if localViewmodel then
-                table.insert(blacklist, localViewmodel)
-            end
-        end
-
-        for _, inst in ipairs(extraIgnore) do
-            table.insert(blacklist, inst)
-        end
-
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = blacklist
-        params.IgnoreWater = true
-
-        local hit = Workspace:Raycast(currentOrigin, remaining, params)
-        if not hit then
-            return false
-        end
-
-        local instance = hit.Instance
-        if not instance then
-            return false
-        end
-
-        if instance == targetPart or instance:IsDescendantOf(targetPart.Parent) then
-            return false
-        end
-
-        if instance:IsA("BasePart") and instance.Transparency > 0 then
-            table.insert(extraIgnore, instance)
-            local nextOrigin = hit.Position + stepDir * 0.05
-            remaining = targetPart.Position - nextOrigin
-            if remaining.Magnitude <= 0.05 then
-                return false
-            end
-            currentOrigin = nextOrigin
-        else
-            return true
+    local ignore = { camera }
+    if self._viewmodelsFolder then
+        local localViewmodel = self._viewmodelsFolder:FindFirstChild("LocalViewmodel")
+        if localViewmodel then
+            table.insert(ignore, localViewmodel)
         end
     end
 
-    return true
+    local localCharacter = Players.LocalPlayer and Players.LocalPlayer.Character
+    if localCharacter then
+        table.insert(ignore, localCharacter)
+    end
+
+    local targetRoot = targetPart.Parent
+    if targetPart:IsA("Model") then
+        targetRoot = targetPart
+    end
+
+    return not checkLineOfSight(camera.CFrame.Position, targetPart.Position, targetRoot, ignore)
 end
 
 function Module:_getClosestTargetToCursor()
