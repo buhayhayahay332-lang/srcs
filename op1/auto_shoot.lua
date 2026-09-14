@@ -47,45 +47,84 @@ local function canBulletPass(inst)
     return true
 end
 
-local function checkLineOfSight(origin, targetPos, targetRoot, ignoreList)
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = ignoreList or {}
-    params.IgnoreWater = true
+local function checkLineOfSight(originPos, targetPos, targetRoot, ignoreList, camera)
+    local cam = camera or Workspace.CurrentCamera
 
-    local dir = targetPos - origin
-    if dir.Magnitude <= 0.05 then
-        return true
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+    overlapParams.FilterDescendantsInstances = ignoreList or {}
+    local overlapping = Workspace:GetPartBoundsInBox(
+        CFrame.new(originPos),
+        Vector3.new(0.6, 0.6, 0.6),
+        overlapParams
+    )
+    for _, overlappingPart in ipairs(overlapping) do
+        if typeof(targetRoot) ~= "Instance" or not overlappingPart:IsDescendantOf(targetRoot) then
+            if not canBulletPass(overlappingPart) then
+                return false
+            end
+        end
     end
-    local stepDir = dir.Unit
 
-    for _ = 1, 16 do
-        local hit = Workspace:Raycast(origin, dir, params)
-        if not hit or not hit.Instance then
-            return true
-        end
+    local lookDir = (targetPos - originPos).Unit or Vector3.new(0, 0, -1)
+    local rightDir = (cam and cam.CFrame.RightVector) or Vector3.new(1, 0, 0)
+    local upDir = (cam and cam.CFrame.UpVector) or Vector3.new(0, 1, 0)
 
-        local inst = hit.Instance
+    local samples = {
+        originPos,
+        originPos - lookDir * 0.6,
+        originPos + lookDir * 0.35,
+        originPos + upDir * 0.15,
+        originPos + rightDir * 0.15,
+        originPos - rightDir * 0.15,
+    }
 
-        if inst == targetRoot or (typeof(targetRoot) == "Instance" and inst:IsDescendantOf(targetRoot)) then
-            return true
-        end
+    for _, sampleOrigin in ipairs(samples) do
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = ignoreList or {}
+        params.IgnoreWater = true
 
-        if not canBulletPass(inst) then
-            return false
-        end
-
-        params:AddToFilter(inst)
-        origin = hit.Position + stepDir * 0.05
-        dir = targetPos - origin
+        local currentOrigin = sampleOrigin
+        local dir = targetPos - currentOrigin
         if dir.Magnitude <= 0.05 then
-            return true
+            continue
+        end
+        local stepDir = dir.Unit
+
+        local sampleClear = true
+        for _ = 1, 16 do
+            local hit = Workspace:Raycast(currentOrigin, dir, params)
+            if not hit or not hit.Instance then
+                break
+            end
+
+            local inst = hit.Instance
+
+            if inst == targetRoot or (typeof(targetRoot) == "Instance" and inst:IsDescendantOf(targetRoot)) then
+                break
+            end
+
+            if not canBulletPass(inst) then
+                sampleClear = false
+                break
+            end
+
+            params:AddToFilter(inst)
+            currentOrigin = hit.Position + stepDir * 0.05
+            dir = targetPos - currentOrigin
+            if dir.Magnitude <= 0.05 then
+                break
+            end
+        end
+
+        if not sampleClear then
+            return false
         end
     end
 
     return true
 end
-
 local GADGET_TARGETS = {
     Drone = "HumanoidRootPart",
     Claymore = "Laser",
@@ -376,7 +415,7 @@ function Module:_isVisible(targetPart)
         targetRoot = targetPart
     end
 
-    return checkLineOfSight(camera.CFrame.Position, targetPart.Position, targetRoot, ignore)
+    return checkLineOfSight(camera.CFrame.Position, targetPart.Position, targetRoot, ignore, camera)
 end
 
 function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq)
