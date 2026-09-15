@@ -326,28 +326,10 @@ function Module:_isWallBlocked(targetPart, targetModel)
         table.insert(blacklist, localCharacter)
     end
 
-    if not self._wallPenetration then
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = blacklist
-        params.IgnoreWater = true
-
-        local hit = Workspace:Raycast(origin, direction, params)
-        if not hit or not hit.Instance then
-            return false
-        end
-
-        local instance = hit.Instance
-        if instance == targetPart
-            or (targetModel and instance:IsDescendantOf(targetModel))
-            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
-            return false
-        end
-
-        return true
-    end
-
     local extraIgnore = {}
+    local currentOrigin = origin
+    local remaining = direction
+    local stepDir = direction.Unit
 
     for _ = 1, 12 do
         local currentBlacklist = {}
@@ -363,7 +345,7 @@ function Module:_isWallBlocked(targetPart, targetModel)
         params.FilterDescendantsInstances = currentBlacklist
         params.IgnoreWater = true
 
-        local hit = Workspace:Raycast(origin, direction, params)
+        local hit = Workspace:Raycast(currentOrigin, remaining, params)
         if not hit or not hit.Instance then
             return false
         end
@@ -375,12 +357,25 @@ function Module:_isWallBlocked(targetPart, targetModel)
             return false
         end
 
-        if not instance.CanCollide
-            or instance.Transparency >= 0.95
-            or instance.Name == "BulletHole"
-            or instance:IsA("Beam")
-            or (instance:IsA("BasePart") and instance.Transparency > 0) then
+        local isIgnored = false
+        if self._wallPenetration then
+            isIgnored = instance:IsA("BasePart") and (instance.Transparency > 0 or not instance.CanCollide)
+        else
+            isIgnored = not instance.CanCollide
+                or instance.Transparency >= 0.95
+                or instance.Name == "BulletHole"
+                or instance:IsA("Beam")
+                or (instance:IsA("BasePart") and instance.Transparency > 0)
+        end
+
+        if isIgnored then
             table.insert(extraIgnore, instance)
+            local nextOrigin = hit.Position + stepDir * 0.05
+            remaining = targetPart.Position - nextOrigin
+            if remaining.Magnitude <= 0.05 then
+                return false
+            end
+            currentOrigin = nextOrigin
         else
             return true
         end
