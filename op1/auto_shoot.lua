@@ -340,6 +340,46 @@ function Module:_isVisible(targetPart, targetModel)
             return true
         end
 
+local function isSoftwallInstance(inst)
+    if not inst or not inst:IsA("BasePart") then
+        return false
+    end
+    local mat = inst.Material
+    if mat == Enum.Material.Wood
+        or mat == Enum.Material.WoodPlanks
+        or mat == Enum.Material.Plaster
+        or mat == Enum.Material.Glass then
+        return true
+    end
+    local name = inst.Name
+    if name == "BarricadePlank"
+        or name == "Glass_Breakable"
+        or name:find("Soft")
+        or name:find("Plank")
+        or name:find("Barricade")
+        or name:find("Destruct")
+        or name:find("Breakable")
+        or name:find("Wood") then
+        return true
+    end
+    if inst:GetAttribute("Destructible") == true
+        or inst:GetAttribute("Softwall") == true
+        or inst:GetAttribute("Health") ~= nil then
+        return true
+    end
+    local parent = inst.Parent
+    if parent then
+        local pName = parent.Name
+        if pName == "BarricadeFrame"
+            or pName:find("Barricade")
+            or pName:find("Soft")
+            or pName:find("Destruct") then
+            return true
+        end
+    end
+    return false
+end
+
         local isSoftPassThrough = not instance.CanCollide
             or instance.Transparency >= 0.95
             or instance.Name == "BulletHole"
@@ -348,7 +388,7 @@ function Module:_isVisible(targetPart, targetModel)
 
         if isSoftPassThrough then
             table.insert(extraIgnore, instance)
-        elseif self._wallPenetration then
+        elseif self._wallPenetration and isSoftwallInstance(instance) then
             table.insert(extraIgnore, instance)
         else
             return false
@@ -484,7 +524,7 @@ function Module:_getTarget()
             return hitPart
         end
 
-        local isSoftPassThrough = (hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide)) or self._wallPenetration
+        local isSoftPassThrough = (hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide)) or (self._wallPenetration and isSoftwallInstance(hitPart))
         if isSoftPassThrough then
             table.insert(blacklist, hitPart)
             currentOrigin = hit.Position + lookDir * 0.05
