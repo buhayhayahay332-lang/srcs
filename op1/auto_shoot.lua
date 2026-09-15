@@ -22,6 +22,7 @@ local Module = {
     _releaseGrace = 0.12,
     _renderConn = nil,
     _viewmodelsFolder = nil,
+    _wallPenetration = false,
 }
 
 local GADGET_TARGETS = {
@@ -339,7 +340,15 @@ function Module:_isVisible(targetPart, targetModel)
             return true
         end
 
-        if not instance.CanCollide or instance.Transparency >= 0.95 or instance.Name == "BulletHole" or instance:IsA("Beam") or (instance:IsA("BasePart") and instance.Transparency > 0) then
+        local isSoftPassThrough = not instance.CanCollide
+            or instance.Transparency >= 0.95
+            or instance.Name == "BulletHole"
+            or instance:IsA("Beam")
+            or (instance:IsA("BasePart") and instance.Transparency > 0)
+
+        if isSoftPassThrough then
+            table.insert(extraIgnore, instance)
+        elseif self._wallPenetration then
             table.insert(extraIgnore, instance)
         else
             return false
@@ -475,7 +484,8 @@ function Module:_getTarget()
             return hitPart
         end
 
-        if hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide) then
+        local isSoftPassThrough = (hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide)) or self._wallPenetration
+        if isSoftPassThrough then
             table.insert(blacklist, hitPart)
             currentOrigin = hit.Position + lookDir * 0.05
             remainingDistance = maxDistance - (currentOrigin - camera.CFrame.Position).Magnitude
@@ -596,6 +606,11 @@ end
 
 function Module:setTargetGadgets(state)
     self._targetGadgets = state == true
+    return true
+end
+
+function Module:setWallPenetration(state)
+    self._wallPenetration = state == true
     return true
 end
 

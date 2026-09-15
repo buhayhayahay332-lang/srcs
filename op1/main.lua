@@ -146,6 +146,11 @@ local function setSilentAimVisibleCheck(state)
         if type(m.setVisibleCheck) == "function" then m:setVisibleCheck(state) end
     end)
 end
+local function setSilentAimWallPenetration(state)
+    withModule("silent_aim", function(m)
+        if type(m.setWallPenetration) == "function" then m:setWallPenetration(state) end
+    end)
+end
 local function setSilentAimFovCircleVisual(state)
     withModule("silent_aim", function(m)
         if type(m.setFovCircleVisible) == "function" then m:setFovCircleVisible(state) end
@@ -190,6 +195,11 @@ end
 local function setAutoShootActivation(mode)
     withModule("auto_shoot", function(m)
         if type(m.setActivation) == "function" then m:setActivation(mode) end
+    end)
+end
+local function setAutoShootWallPenetration(state)
+    withModule("auto_shoot", function(m)
+        if type(m.setWallPenetration) == "function" then m:setWallPenetration(state) end
     end)
 end
 
@@ -735,10 +745,10 @@ local function applyDefaults()
     setSilentAim(false); setSilentAimFov(60); setSilentAimSmoothness(1)
     setSilentAimMode("silent"); setSilentAimTeamCheck(true)
     setAimAssistActivation("mb2"); setSilentAimTargetMode("custom_parts")
-    setSilentAimTargetGadgets(false); setSilentAimVisibleCheck(false)
+    setSilentAimTargetGadgets(false); setSilentAimVisibleCheck(false); setSilentAimWallPenetration(false)
     setSilentAimFovCircleVisual(true)
     setSilentAimSnaplines(false); setSilentAimSnaplineOrigin("Center")
-    setAutoShoot(false); setAutoShootDelay(0); setAutoShootTeamCheck(true); setAutoShootTargetGadgets(false); setAutoShootActivation("always")
+    setAutoShoot(false); setAutoShootDelay(0); setAutoShootTeamCheck(true); setAutoShootTargetGadgets(false); setAutoShootWallPenetration(false); setAutoShootActivation("always")
 
     setGunModEnabled(false); setGunModConfig("recoil_reduction", 0)
     setGunModConfig("horizontal_recoil", 0); setGunModConfig("no_spread", false)
@@ -876,6 +886,11 @@ local function buildObsidianUi()
         Tooltip = "Only lock visible players",
         Callback = setSilentAimVisibleCheck,
     })
+    AimL:AddToggle("SA_WallPen", {
+        Text = "Soft Wall Penetration", Default = false,
+        Tooltip = "Target enemies through soft/penetrable walls",
+        Callback = setSilentAimWallPenetration,
+    })
     AimL:AddToggle("SA_FOVCircle", {
         Text = "FOV Circle", Default = true,
         Tooltip = "Draw FOV boundary on screen",
@@ -935,6 +950,11 @@ local function buildObsidianUi()
         Text = "TriggberBot Target Gadgets", Default = false,
         Tooltip = "Also auto fire at gadgets (drones, claymores, etc.)",
         Callback = setAutoShootTargetGadgets,
+    })
+    AimL:AddToggle("SA_AutoShootWallPen", {
+        Text = "TriggerBot Soft Wall Penetration", Default = false,
+        Tooltip = "Auto shoot through soft/penetrable walls",
+        Callback = setAutoShootWallPenetration,
     })
     AimL:AddDropdown("SA_AutoShootActivation", {
         Values = { "always", "mb1", "mb2", "mobile_hold", "mobile_toggle", "visible_fov", "Aiming + Aim FOV" }, Default = 1,

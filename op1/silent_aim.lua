@@ -20,6 +20,7 @@ local Module = {
     _snaplineThickness = 1,
     _snaplineTransparency = 1,
     _visibleCheck = false,
+    _wallPenetration = false,
     _showFovCircle = true,
     _showSnaplines = false,
     _mobileScopeButton = nil,
@@ -350,7 +351,15 @@ function Module:_isWallBlocked(targetPart, targetModel)
             return false
         end
 
-        if not instance.CanCollide or instance.Transparency >= 0.95 or instance.Name == "BulletHole" or instance:IsA("Beam") or (instance:IsA("BasePart") and instance.Transparency > 0) then
+        local isSoftPassThrough = not instance.CanCollide
+            or instance.Transparency >= 0.95
+            or instance.Name == "BulletHole"
+            or instance:IsA("Beam")
+            or (instance:IsA("BasePart") and instance.Transparency > 0)
+
+        if isSoftPassThrough then
+            table.insert(extraIgnore, instance)
+        elseif self._wallPenetration then
             table.insert(extraIgnore, instance)
         else
             return true
@@ -844,6 +853,11 @@ end
 
 function Module:setVisibleCheck(state)
     self._visibleCheck = state == true
+    return true
+end
+
+function Module:setWallPenetration(state)
+    self._wallPenetration = state == true
     return true
 end
 
