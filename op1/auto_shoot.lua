@@ -306,23 +306,18 @@ function Module:_isVisible(targetPart, targetModel)
     local localPlayer = Players and Players.LocalPlayer
     local localCharacter = localPlayer and localPlayer.Character
 
-    local extraIgnore = {}
+    local blacklist = { camera }
+    if self._viewmodelsFolder then
+        local localViewmodel = self._viewmodelsFolder:FindFirstChild("LocalViewmodel")
+        if localViewmodel then
+            table.insert(blacklist, localViewmodel)
+        end
+    end
+    if localCharacter then
+        table.insert(blacklist, localCharacter)
+    end
 
-    for _ = 1, 12 do
-        local blacklist = { camera }
-        if self._viewmodelsFolder then
-            local localViewmodel = self._viewmodelsFolder:FindFirstChild("LocalViewmodel")
-            if localViewmodel then
-                table.insert(blacklist, localViewmodel)
-            end
-        end
-        if localCharacter then
-            table.insert(blacklist, localCharacter)
-        end
-        for _, instance in ipairs(extraIgnore) do
-            table.insert(blacklist, instance)
-        end
-
+    if not self._wallPenetration then
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = blacklist
@@ -340,55 +335,42 @@ function Module:_isVisible(targetPart, targetModel)
             return true
         end
 
-local function isSoftwallInstance(inst)
-    if not inst or not inst:IsA("BasePart") then
         return false
     end
-    local mat = inst.Material
-    if mat == Enum.Material.Wood
-        or mat == Enum.Material.WoodPlanks
-        or mat == Enum.Material.Plaster
-        or mat == Enum.Material.Glass then
-        return true
-    end
-    local name = inst.Name
-    if name == "BarricadePlank"
-        or name == "Glass_Breakable"
-        or name:find("Soft")
-        or name:find("Plank")
-        or name:find("Barricade")
-        or name:find("Destruct")
-        or name:find("Breakable")
-        or name:find("Wood") then
-        return true
-    end
-    if inst:GetAttribute("Destructible") == true
-        or inst:GetAttribute("Softwall") == true
-        or inst:GetAttribute("Health") ~= nil then
-        return true
-    end
-    local parent = inst.Parent
-    if parent then
-        local pName = parent.Name
-        if pName == "BarricadeFrame"
-            or pName:find("Barricade")
-            or pName:find("Soft")
-            or pName:find("Destruct") then
+
+    local extraIgnore = {}
+
+    for _ = 1, 12 do
+        local currentBlacklist = {}
+        for _, item in ipairs(blacklist) do
+            table.insert(currentBlacklist, item)
+        end
+        for _, instance in ipairs(extraIgnore) do
+            table.insert(currentBlacklist, instance)
+        end
+
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = currentBlacklist
+        params.IgnoreWater = true
+
+        local hit = Workspace:Raycast(origin, remaining, params)
+        if not hit or not hit.Instance then
             return true
         end
-    end
-    return false
-end
 
-        local isSoftPassThrough = not instance.CanCollide
+        local instance = hit.Instance
+        if instance == targetPart
+            or (targetModel and instance:IsDescendantOf(targetModel))
+            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
+            return true
+        end
+
+        if not instance.CanCollide
             or instance.Transparency >= 0.95
             or instance.Name == "BulletHole"
             or instance:IsA("Beam")
-            or (instance:IsA("BasePart") and instance.Transparency > 0)
-
-        if isSoftPassThrough then
-            table.insert(extraIgnore, instance)
-        elseif self._wallPenetration and isSoftwallInstance(instance) then
+            or (instance:IsA("BasePart") and instance.Transparency > 0) then
             table.insert(extraIgnore, instance)
         else
             return false
@@ -524,7 +506,7 @@ function Module:_getTarget()
             return hitPart
         end
 
-        local isSoftPassThrough = (hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide)) or (self._wallPenetration and isSoftwallInstance(hitPart))
+        local isSoftPassThrough = self._wallPenetration and (not hitPart.CanCollide or hitPart.Transparency >= 0.95 or hitPart.Name == "BulletHole" or hitPart:IsA("Beam") or (hitPart:IsA("BasePart") and hitPart.Transparency > 0))
         if isSoftPassThrough then
             table.insert(blacklist, hitPart)
             currentOrigin = hit.Position + lookDir * 0.05
