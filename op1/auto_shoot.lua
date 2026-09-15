@@ -35,14 +35,14 @@ local GADGET_TARGETS = {
 
 local TEAM_COLOR = Color3.fromRGB(0, 150, 0)
 
-local function isSoftWall(instance)
+local function getSoftWallRoot(instance)
     local current = instance
     while current do
         local ok, tagged = pcall(function()
             return current:HasTag("SoftWall")
         end)
         if ok and tagged then
-            return true
+            return current
         end
 
         if current == Workspace then
@@ -51,7 +51,7 @@ local function isSoftWall(instance)
         current = current.Parent
     end
 
-    return false
+    return nil
 end
 
 local TARGET_PARTS = {
@@ -359,8 +359,10 @@ function Module:_isVisible(targetPart, targetModel)
             return true
         end
 
-        if (self._softwallCheck and isSoftWall(instance))
-            or not instance.CanCollide
+        local softWallRoot = self._softwallCheck and getSoftWallRoot(instance)
+        if softWallRoot then
+            table.insert(extraIgnore, softWallRoot)
+        elseif not instance.CanCollide
             or instance.Transparency >= 0.95
             or instance.Name == "BulletHole"
             or instance:IsA("Beam")
@@ -500,7 +502,12 @@ function Module:_getTarget()
             return hitPart
         end
 
-        if hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide) then
+        local softWallRoot = self._softwallCheck and getSoftWallRoot(hitPart)
+        if softWallRoot then
+            table.insert(blacklist, softWallRoot)
+            currentOrigin = hit.Position + lookDir * 0.05
+            remainingDistance = maxDistance - (currentOrigin - camera.CFrame.Position).Magnitude
+        elseif hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide) then
             table.insert(blacklist, hitPart)
             currentOrigin = hit.Position + lookDir * 0.05
             remainingDistance = maxDistance - (currentOrigin - camera.CFrame.Position).Magnitude
