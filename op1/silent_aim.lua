@@ -11,6 +11,7 @@ local Module = {
     _teamCheck = true,
     _targetMode = "custom_parts",
     _targetGadgets = false,
+    _softwallCheck = false,
     _aimAssistActivation = "mb2",
     _smoothness = 1,
     _fovRadius = 60,
@@ -20,7 +21,6 @@ local Module = {
     _snaplineThickness = 1,
     _snaplineTransparency = 1,
     _visibleCheck = false,
-    _wallPenetration = false,
     _showFovCircle = true,
     _showSnaplines = false,
     _mobileScopeButton = nil,
@@ -55,6 +55,25 @@ local GADGET_TARGETS = {
 }
 
 local TEAM_COLOR = Color3.fromRGB(0, 150, 0)
+
+local function isSoftWall(instance)
+    local current = instance
+    while current do
+        local ok, tagged = pcall(function()
+            return current:HasTag("SoftWall")
+        end)
+        if ok and tagged then
+            return true
+        end
+
+        if current == Workspace then
+            break
+        end
+        current = current.Parent
+    end
+
+    return false
+end
 
 local function clampNumber(v, minV, maxV, defaultV)
     local n = tonumber(v)
@@ -234,12 +253,12 @@ function Module:_isMobileScopePressed()
     return ok and guiState and guiState.Name == "Press" or false
 end
 
-function Module:_checkPart(part, mousePos, closestPart, closestDistSq)
+function Module:_checkPart(part, mousePos, closestPart, closestDistSq, targetModel)
     if not part or not part:IsA("BasePart") then
         return closestPart, closestDistSq
     end
 
-    if self._visibleCheck and self:_isWallBlocked(part) then
+    if self._visibleCheck and self:_isWallBlocked(part, targetModel) then
         return closestPart, closestDistSq
     end
 
@@ -294,9 +313,9 @@ function Module:_getGadgetTargetPart(model)
     return model:FindFirstChild(partName)
 end
 
-function Module:_isWallBlocked(targetPart)
+function Module:_isWallBlocked(targetPart, targetModel)
     local camera = Workspace.CurrentCamera
-    if not camera then
+    if not camera or not targetPart then
         return false
     end
 
@@ -305,15 +324,16 @@ function Module:_isWallBlocked(targetPart)
     end
 
     local origin = camera.CFrame.Position
-    local direction = targetPart.Position - origin
+    local destination = targetPart.Position
+    local direction = destination - origin
     if direction.Magnitude <= 0 then
         return false
     end
 
+    local localPlayer = Players and Players.LocalPlayer
+    local localCharacter = localPlayer and localPlayer.Character
+
     local extraIgnore = {}
-    local currentOrigin = origin
-    local remaining = direction
-    local stepDir = direction.Unit
 
     for _ = 1, 12 do
         local blacklist = { camera }
@@ -324,6 +344,9 @@ function Module:_isWallBlocked(targetPart)
                 table.insert(blacklist, localViewmodel)
             end
         end
+        if localCharacter then
+            table.insert(blacklist, localCharacter)
+        end
 
         for _, inst in ipairs(extraIgnore) do
             table.insert(blacklist, inst)
@@ -333,41 +356,27 @@ function Module:_isWallBlocked(targetPart)
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = blacklist
         params.IgnoreWater = true
-        if not self._wallPenetration then
-            params.RespectCanCollide = true
-        end
 
-        local hit = Workspace:Raycast(currentOrigin, remaining, params)
-        if not hit then
+        local hit = Workspace:Raycast(origin, direction, params)
+        if not hit or not hit.Instance then
             return false
         end
 
         local instance = hit.Instance
-        if not instance then
+
+        if instance == targetPart
+            or (targetModel and instance:IsDescendantOf(targetModel))
+            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
             return false
         end
 
-        if instance == targetPart or instance:IsDescendantOf(targetPart.Parent) then
-            return false
-        end
-
-        local isIgnored = false
-        if self._wallPenetration then
-            isIgnored = instance:IsA("BasePart") and instance.Transparency > 0
-        else
-            isIgnored = instance.Transparency >= 0.95
-                or instance.Name == "BulletHole"
-                or instance:IsA("Beam")
-        end
-
-        if isIgnored then
+        if (self._softwallCheck and isSoftWall(instance))
+            or not instance.CanCollide
+            or instance.Transparency >= 0.95
+            or instance.Name == "BulletHole"
+            or instance:IsA("Beam")
+            or (instance:IsA("BasePart") and instance.Transparency > 0) then
             table.insert(extraIgnore, instance)
-            local nextOrigin = hit.Position + stepDir * 0.05
-            remaining = targetPart.Position - nextOrigin
-            if remaining.Magnitude <= 0.05 then
-                return false
-            end
-            currentOrigin = nextOrigin
         else
             return true
         end
@@ -401,11 +410,11 @@ function Module:_getClosestTargetToCursor()
 
                 if self._targetMode == "head_only" then
                     local head = vm:FindFirstChild("head")
-                    closestPart, closestDistSq = self:_checkPart(head, mousePos, closestPart, closestDistSq)
+                    closestPart, closestDistSq = self:_checkPart(head, mousePos, closestPart, closestDistSq, vm)
                 else
                     for _, partName in ipairs(TARGET_PARTS) do
                         local part = vm:FindFirstChild(partName)
-                        closestPart, closestDistSq = self:_checkPart(part, mousePos, closestPart, closestDistSq)
+                        closestPart, closestDistSq = self:_checkPart(part, mousePos, closestPart, closestDistSq, vm)
                     end
                 end
             end
@@ -416,7 +425,7 @@ function Module:_getClosestTargetToCursor()
         for _, child in ipairs(Workspace:GetChildren()) do
             local gadgetPart = self:_getGadgetTargetPart(child)
             if gadgetPart then
-                closestPart, closestDistSq = self:_checkPart(gadgetPart, mousePos, closestPart, closestDistSq)
+                closestPart, closestDistSq = self:_checkPart(gadgetPart, mousePos, closestPart, closestDistSq, child)
             end
         end
     end
@@ -863,8 +872,8 @@ function Module:setVisibleCheck(state)
     return true
 end
 
-function Module:setWallPenetration(state)
-    self._wallPenetration = state == true
+function Module:setSoftwallCheck(state)
+    self._softwallCheck = state == true
     return true
 end
 

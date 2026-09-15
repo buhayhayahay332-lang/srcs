@@ -12,6 +12,7 @@ local Module = {
     _delay = 0,
     _teamCheck = true,
     _targetGadgets = false,
+    _softwallCheck = false,
     _activation = "always",
     _scopeButtonToggled = false,
     _scopeButtonConn = nil,
@@ -22,7 +23,6 @@ local Module = {
     _releaseGrace = 0.12,
     _renderConn = nil,
     _viewmodelsFolder = nil,
-    _wallPenetration = false,
 }
 
 local GADGET_TARGETS = {
@@ -34,6 +34,25 @@ local GADGET_TARGETS = {
 }
 
 local TEAM_COLOR = Color3.fromRGB(0, 150, 0)
+
+local function isSoftWall(instance)
+    local current = instance
+    while current do
+        local ok, tagged = pcall(function()
+            return current:HasTag("SoftWall")
+        end)
+        if ok and tagged then
+            return true
+        end
+
+        if current == Workspace then
+            break
+        end
+        current = current.Parent
+    end
+
+    return false
+end
 
 local TARGET_PARTS = {
     "head", "torso", "shoulder1", "shoulder2",
@@ -287,7 +306,7 @@ function Module:_getFovRadius()
     return 60
 end
 
-function Module:_isVisible(targetPart)
+function Module:_isVisible(targetPart, targetModel)
     local camera = Workspace.CurrentCamera
     if not camera or not targetPart then
         return false
@@ -303,7 +322,9 @@ function Module:_isVisible(targetPart)
         return true
     end
 
-    local direction = remaining.Unit
+    local localPlayer = Players and Players.LocalPlayer
+    local localCharacter = localPlayer and localPlayer.Character
+
     local extraIgnore = {}
 
     for _ = 1, 12 do
@@ -314,6 +335,9 @@ function Module:_isVisible(targetPart)
                 table.insert(blacklist, localViewmodel)
             end
         end
+        if localCharacter then
+            table.insert(blacklist, localCharacter)
+        end
         for _, instance in ipairs(extraIgnore) do
             table.insert(blacklist, instance)
         end
@@ -322,35 +346,26 @@ function Module:_isVisible(targetPart)
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = blacklist
         params.IgnoreWater = true
-        if not self._wallPenetration then
-            params.RespectCanCollide = true
-        end
 
         local hit = Workspace:Raycast(origin, remaining, params)
         if not hit or not hit.Instance then
-            return false
-        end
-
-        if hit.Instance == targetPart or hit.Instance:IsDescendantOf(targetPart.Parent) then
             return true
         end
 
-        local isIgnored = false
-        if self._wallPenetration then
-            isIgnored = hit.Instance:IsA("BasePart") and hit.Instance.Transparency > 0
-        else
-            isIgnored = hit.Instance.Transparency >= 0.95
-                or hit.Instance.Name == "BulletHole"
-                or hit.Instance:IsA("Beam")
+        local instance = hit.Instance
+        if instance == targetPart
+            or (targetModel and instance:IsDescendantOf(targetModel))
+            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
+            return true
         end
 
-        if isIgnored then
-            table.insert(extraIgnore, hit.Instance)
-            origin = hit.Position + direction * 0.05
-            remaining = targetPart.Position - origin
-            if remaining.Magnitude <= 0.05 then
-                return true
-            end
+        if (self._softwallCheck and isSoftWall(instance))
+            or not instance.CanCollide
+            or instance.Transparency >= 0.95
+            or instance.Name == "BulletHole"
+            or instance:IsA("Beam")
+            or (instance:IsA("BasePart") and instance.Transparency > 0) then
+            table.insert(extraIgnore, instance)
         else
             return false
         end
@@ -359,7 +374,7 @@ function Module:_isVisible(targetPart)
     return false
 end
 
-function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq)
+function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq, targetModel)
     if not part or not part:IsA("BasePart") or part.Transparency >= 1 then
         return closestPart, closestDistSq
     end
@@ -382,7 +397,7 @@ function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq)
         return closestPart, closestDistSq
     end
 
-    if not self:_isVisible(part) then
+    if not self:_isVisible(part, targetModel) then
         return closestPart, closestDistSq
     end
 
@@ -416,7 +431,7 @@ function Module:_getTargetInFov()
                     for _, partName in ipairs(TARGET_PARTS) do
                         local part = viewmodel:FindFirstChild(partName)
                         closestPart, closestDistSq = self:_checkFovPart(
-                            part, mousePos, closestPart, closestDistSq
+                            part, mousePos, closestPart, closestDistSq, viewmodel
                         )
                     end
                 end
@@ -428,7 +443,7 @@ function Module:_getTargetInFov()
         for _, child in ipairs(Workspace:GetChildren()) do
             local gadgetPart = self:_getGadgetTargetPart(child)
             closestPart, closestDistSq = self:_checkFovPart(
-                gadgetPart, mousePos, closestPart, closestDistSq
+                gadgetPart, mousePos, closestPart, closestDistSq, child
             )
         end
     end
@@ -469,9 +484,6 @@ function Module:_getTarget()
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = blacklist
         params.IgnoreWater = true
-        if not self._wallPenetration then
-            params.RespectCanCollide = true
-        end
 
         local hit = Workspace:Raycast(currentOrigin, lookDir * remainingDistance, params)
         if not hit or not hit.Instance then
@@ -488,14 +500,7 @@ function Module:_getTarget()
             return hitPart
         end
 
-        local isSoftPassThrough = false
-        if self._wallPenetration then
-            isSoftPassThrough = hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide)
-        else
-            isSoftPassThrough = hitPart.Transparency >= 0.95 or hitPart.Name == "BulletHole" or hitPart:IsA("Beam")
-        end
-
-        if isSoftPassThrough then
+        if hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide) then
             table.insert(blacklist, hitPart)
             currentOrigin = hit.Position + lookDir * 0.05
             remainingDistance = maxDistance - (currentOrigin - camera.CFrame.Position).Magnitude
@@ -619,8 +624,8 @@ function Module:setTargetGadgets(state)
     return true
 end
 
-function Module:setWallPenetration(state)
-    self._wallPenetration = state == true
+function Module:setSoftwallCheck(state)
+    self._softwallCheck = state == true
     return true
 end
 
