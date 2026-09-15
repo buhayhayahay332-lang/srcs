@@ -359,15 +359,81 @@ function Module:_isVisible(targetPart, targetModel)
             return true
         end
 
-        local softWallRoot = self._softwallCheck and getSoftWallRoot(instance)
-        if softWallRoot then
-            table.insert(extraIgnore, softWallRoot)
-        elseif not instance.CanCollide
+        if not instance.CanCollide
             or instance.Transparency >= 0.95
             or instance.Name == "BulletHole"
             or instance:IsA("Beam")
             or (instance:IsA("BasePart") and instance.Transparency > 0) then
             table.insert(extraIgnore, instance)
+        else
+            return false
+        end
+    end
+
+    return false
+end
+
+function Module:_isVisibleThroughSoftwalls(targetPart, targetModel)
+    local camera = Workspace.CurrentCamera
+    if not camera or not targetPart then
+        return false
+    end
+
+    if not self._viewmodelsFolder or not self._viewmodelsFolder.Parent then
+        self._viewmodelsFolder = Workspace:FindFirstChild("Viewmodels")
+    end
+
+    local origin = camera.CFrame.Position
+    local remaining = targetPart.Position - origin
+    if remaining.Magnitude <= 0.05 then
+        return true
+    end
+
+    local localPlayer = Players and Players.LocalPlayer
+    local localCharacter = localPlayer and localPlayer.Character
+    local direction = remaining.Unit
+    local extraIgnore = {}
+
+    for _ = 1, 12 do
+        local blacklist = { camera }
+        if self._viewmodelsFolder then
+            local localViewmodel = self._viewmodelsFolder:FindFirstChild("LocalViewmodel")
+            if localViewmodel then
+                table.insert(blacklist, localViewmodel)
+            end
+        end
+        if localCharacter then
+            table.insert(blacklist, localCharacter)
+        end
+        for _, instance in ipairs(extraIgnore) do
+            table.insert(blacklist, instance)
+        end
+
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = blacklist
+        params.IgnoreWater = true
+
+        local hit = Workspace:Raycast(origin, remaining, params)
+        if not hit or not hit.Instance then
+            return true
+        end
+
+        local instance = hit.Instance
+        if instance == targetPart
+            or (targetModel and instance:IsDescendantOf(targetModel))
+            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
+            return true
+        end
+
+        local softWallRoot = getSoftWallRoot(instance)
+        if (instance:IsA("BasePart") and instance.Transparency > 0) or softWallRoot then
+            table.insert(extraIgnore, softWallRoot or instance)
+            origin = hit.Position + direction * 0.05
+            remaining = targetPart.Position - origin
+            if remaining.Magnitude <= 0.05 then
+                return true
+            end
         else
             return false
         end
@@ -399,7 +465,14 @@ function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq, target
         return closestPart, closestDistSq
     end
 
-    if not self:_isVisible(part, targetModel) then
+    local visible
+    if self._softwallCheck then
+        visible = self:_isVisibleThroughSoftwalls(part, targetModel)
+    else
+        visible = self:_isVisible(part, targetModel)
+    end
+
+    if not visible then
         return closestPart, closestDistSq
     end
 

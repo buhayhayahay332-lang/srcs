@@ -258,8 +258,16 @@ function Module:_checkPart(part, mousePos, closestPart, closestDistSq, targetMod
         return closestPart, closestDistSq
     end
 
-    if self._visibleCheck and self:_isWallBlocked(part, targetModel) then
-        return closestPart, closestDistSq
+    if self._visibleCheck then
+        local blocked
+        if self._softwallCheck then
+            blocked = self:_isWallBlockedThroughSoftwalls(part, targetModel)
+        else
+            blocked = self:_isWallBlocked(part, targetModel)
+        end
+        if blocked then
+            return closestPart, closestDistSq
+        end
     end
 
     local camera = Workspace.CurrentCamera
@@ -370,15 +378,85 @@ function Module:_isWallBlocked(targetPart, targetModel)
             return false
         end
 
-        local softWallRoot = self._softwallCheck and getSoftWallRoot(instance)
-        if softWallRoot then
-            table.insert(extraIgnore, softWallRoot)
-        elseif not instance.CanCollide
+        if not instance.CanCollide
             or instance.Transparency >= 0.95
             or instance.Name == "BulletHole"
             or instance:IsA("Beam")
             or (instance:IsA("BasePart") and instance.Transparency > 0) then
             table.insert(extraIgnore, instance)
+        else
+            return true
+        end
+    end
+
+    return true
+end
+
+function Module:_isWallBlockedThroughSoftwalls(targetPart, targetModel)
+    local camera = Workspace.CurrentCamera
+    if not camera or not targetPart then
+        return false
+    end
+
+    if not self._viewmodelsFolder or not self._viewmodelsFolder.Parent then
+        self._viewmodelsFolder = Workspace:FindFirstChild("Viewmodels")
+    end
+
+    local origin = camera.CFrame.Position
+    local direction = targetPart.Position - origin
+    if direction.Magnitude <= 0 then
+        return false
+    end
+
+    local localPlayer = Players and Players.LocalPlayer
+    local localCharacter = localPlayer and localPlayer.Character
+    local extraIgnore = {}
+    local currentOrigin = origin
+    local remaining = direction
+    local stepDir = direction.Unit
+
+    for _ = 1, 12 do
+        local blacklist = { camera }
+        local viewmodelsFolder = self._viewmodelsFolder
+        if viewmodelsFolder then
+            local localViewmodel = viewmodelsFolder:FindFirstChild("LocalViewmodel")
+            if localViewmodel then
+                table.insert(blacklist, localViewmodel)
+            end
+        end
+        if localCharacter then
+            table.insert(blacklist, localCharacter)
+        end
+        for _, instance in ipairs(extraIgnore) do
+            table.insert(blacklist, instance)
+        end
+
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = blacklist
+        params.IgnoreWater = true
+
+        local hit = Workspace:Raycast(currentOrigin, remaining, params)
+        if not hit or not hit.Instance then
+            return false
+        end
+
+        local instance = hit.Instance
+        if instance == targetPart
+            or (targetModel and instance:IsDescendantOf(targetModel))
+            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
+            return false
+        end
+
+        local softWallRoot = getSoftWallRoot(instance)
+        if (instance:IsA("BasePart") and instance.Transparency > 0) or softWallRoot then
+            table.insert(extraIgnore, softWallRoot or instance)
+            local nextOrigin = hit.Position + stepDir * 0.05
+            remaining = targetPart.Position - nextOrigin
+            if remaining.Magnitude <= 0.05 then
+                return false
+            end
+            currentOrigin = nextOrigin
         else
             return true
         end
