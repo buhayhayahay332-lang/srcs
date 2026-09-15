@@ -287,7 +287,7 @@ function Module:_getFovRadius()
     return 60
 end
 
-function Module:_isVisible(targetPart, targetModel)
+function Module:_isVisible(targetPart)
     local camera = Workspace.CurrentCamera
     if not camera or not targetPart then
         return false
@@ -303,70 +303,53 @@ function Module:_isVisible(targetPart, targetModel)
         return true
     end
 
-    local localPlayer = Players and Players.LocalPlayer
-    local localCharacter = localPlayer and localPlayer.Character
-
-    local blacklist = { camera }
-    if self._viewmodelsFolder then
-        local localViewmodel = self._viewmodelsFolder:FindFirstChild("LocalViewmodel")
-        if localViewmodel then
-            table.insert(blacklist, localViewmodel)
-        end
-    end
-    if localCharacter then
-        table.insert(blacklist, localCharacter)
-    end
-
+    local direction = remaining.Unit
     local extraIgnore = {}
-    local currentOrigin = origin
-    local currentRemaining = remaining
-    local stepDir = remaining.Unit
 
     for _ = 1, 12 do
-        local currentBlacklist = {}
-        for _, item in ipairs(blacklist) do
-            table.insert(currentBlacklist, item)
+        local blacklist = { camera }
+        if self._viewmodelsFolder then
+            local localViewmodel = self._viewmodelsFolder:FindFirstChild("LocalViewmodel")
+            if localViewmodel then
+                table.insert(blacklist, localViewmodel)
+            end
         end
         for _, instance in ipairs(extraIgnore) do
-            table.insert(currentBlacklist, instance)
+            table.insert(blacklist, instance)
         end
 
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = currentBlacklist
+        params.FilterDescendantsInstances = blacklist
         params.IgnoreWater = true
 
-        local hit = Workspace:Raycast(currentOrigin, currentRemaining, params)
+        local hit = Workspace:Raycast(origin, remaining, params)
         if not hit or not hit.Instance then
-            return true
+            return false
         end
 
-        local instance = hit.Instance
-        if instance == targetPart
-            or (targetModel and instance:IsDescendantOf(targetModel))
-            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
+        if hit.Instance == targetPart or hit.Instance:IsDescendantOf(targetPart.Parent) then
             return true
         end
 
         local isIgnored = false
         if self._wallPenetration then
-            isIgnored = instance:IsA("BasePart") and (instance.Transparency > 0 or not instance.CanCollide)
+            isIgnored = hit.Instance:IsA("BasePart") and hit.Instance.Transparency > 0
         else
-            isIgnored = not instance.CanCollide
-                or instance.Transparency >= 0.95
-                or instance.Name == "BulletHole"
-                or instance:IsA("Beam")
-                or (instance:IsA("BasePart") and instance.Transparency > 0)
+            isIgnored = not hit.Instance.CanCollide
+                or hit.Instance.Transparency >= 0.95
+                or hit.Instance.Name == "BulletHole"
+                or hit.Instance:IsA("Beam")
+                or (hit.Instance:IsA("BasePart") and hit.Instance.Transparency > 0)
         end
 
         if isIgnored then
-            table.insert(extraIgnore, instance)
-            local nextOrigin = hit.Position + stepDir * 0.05
-            currentRemaining = targetPart.Position - nextOrigin
-            if currentRemaining.Magnitude <= 0.05 then
+            table.insert(extraIgnore, hit.Instance)
+            origin = hit.Position + direction * 0.05
+            remaining = targetPart.Position - origin
+            if remaining.Magnitude <= 0.05 then
                 return true
             end
-            currentOrigin = nextOrigin
         else
             return false
         end
@@ -375,7 +358,7 @@ function Module:_isVisible(targetPart, targetModel)
     return false
 end
 
-function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq, targetModel)
+function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq)
     if not part or not part:IsA("BasePart") or part.Transparency >= 1 then
         return closestPart, closestDistSq
     end
@@ -398,7 +381,7 @@ function Module:_checkFovPart(part, mousePos, closestPart, closestDistSq, target
         return closestPart, closestDistSq
     end
 
-    if not self:_isVisible(part, targetModel) then
+    if not self:_isVisible(part) then
         return closestPart, closestDistSq
     end
 
@@ -432,7 +415,7 @@ function Module:_getTargetInFov()
                     for _, partName in ipairs(TARGET_PARTS) do
                         local part = viewmodel:FindFirstChild(partName)
                         closestPart, closestDistSq = self:_checkFovPart(
-                            part, mousePos, closestPart, closestDistSq, viewmodel
+                            part, mousePos, closestPart, closestDistSq
                         )
                     end
                 end
@@ -444,7 +427,7 @@ function Module:_getTargetInFov()
         for _, child in ipairs(Workspace:GetChildren()) do
             local gadgetPart = self:_getGadgetTargetPart(child)
             closestPart, closestDistSq = self:_checkFovPart(
-                gadgetPart, mousePos, closestPart, closestDistSq, child
+                gadgetPart, mousePos, closestPart, closestDistSq
             )
         end
     end

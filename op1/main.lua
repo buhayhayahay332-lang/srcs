@@ -1,4 +1,4 @@
-warn("xd 5")
+warn("xd 6")
 local moduleRepo = "https://raw.githubusercontent.com/buhayhayahay332-lang/srcs/refs/heads/main/op1/"
 
 local MODULE_FILES = {
@@ -887,7 +887,7 @@ local function buildObsidianUi()
         Callback = setSilentAimVisibleCheck,
     })
     AimL:AddToggle("SA_WallPen", {
-        Text = "Soft Wall Penetration", Default = false,
+        Text = "Wall Penetration", Default = false,
         Tooltip = "Target enemies through soft/penetrable walls",
         Callback = setSilentAimWallPenetration,
     })
@@ -952,7 +952,7 @@ local function buildObsidianUi()
         Callback = setAutoShootTargetGadgets,
     })
     AimL:AddToggle("SA_AutoShootWallPen", {
-        Text = "TriggerBot Soft Wall Penetration", Default = false,
+        Text = "TriggerBot Wall Penetration", Default = false,
         Tooltip = "Auto shoot through soft/penetrable walls",
         Callback = setAutoShootWallPenetration,
     })

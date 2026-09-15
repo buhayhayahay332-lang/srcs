@@ -234,12 +234,12 @@ function Module:_isMobileScopePressed()
     return ok and guiState and guiState.Name == "Press" or false
 end
 
-function Module:_checkPart(part, mousePos, closestPart, closestDistSq, targetModel)
+function Module:_checkPart(part, mousePos, closestPart, closestDistSq)
     if not part or not part:IsA("BasePart") then
         return closestPart, closestDistSq
     end
 
-    if self._visibleCheck and self:_isWallBlocked(part, targetModel) then
+    if self._visibleCheck and self:_isWallBlocked(part) then
         return closestPart, closestDistSq
     end
 
@@ -294,9 +294,9 @@ function Module:_getGadgetTargetPart(model)
     return model:FindFirstChild(partName)
 end
 
-function Module:_isWallBlocked(targetPart, targetModel)
+function Module:_isWallBlocked(targetPart)
     local camera = Workspace.CurrentCamera
-    if not camera or not targetPart then
+    if not camera then
         return false
     end
 
@@ -305,25 +305,9 @@ function Module:_isWallBlocked(targetPart, targetModel)
     end
 
     local origin = camera.CFrame.Position
-    local destination = targetPart.Position
-    local direction = destination - origin
+    local direction = targetPart.Position - origin
     if direction.Magnitude <= 0 then
         return false
-    end
-
-    local localPlayer = Players and Players.LocalPlayer
-    local localCharacter = localPlayer and localPlayer.Character
-
-    local blacklist = { camera }
-    local viewmodelsFolder = self._viewmodelsFolder
-    if viewmodelsFolder then
-        local localViewmodel = viewmodelsFolder:FindFirstChild("LocalViewmodel")
-        if localViewmodel then
-            table.insert(blacklist, localViewmodel)
-        end
-    end
-    if localCharacter then
-        table.insert(blacklist, localCharacter)
     end
 
     local extraIgnore = {}
@@ -332,34 +316,41 @@ function Module:_isWallBlocked(targetPart, targetModel)
     local stepDir = direction.Unit
 
     for _ = 1, 12 do
-        local currentBlacklist = {}
-        for _, item in ipairs(blacklist) do
-            table.insert(currentBlacklist, item)
+        local blacklist = { camera }
+        local viewmodelsFolder = self._viewmodelsFolder
+        if viewmodelsFolder then
+            local localViewmodel = viewmodelsFolder:FindFirstChild("LocalViewmodel")
+            if localViewmodel then
+                table.insert(blacklist, localViewmodel)
+            end
         end
+
         for _, inst in ipairs(extraIgnore) do
-            table.insert(currentBlacklist, inst)
+            table.insert(blacklist, inst)
         end
 
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = currentBlacklist
+        params.FilterDescendantsInstances = blacklist
         params.IgnoreWater = true
 
         local hit = Workspace:Raycast(currentOrigin, remaining, params)
-        if not hit or not hit.Instance then
+        if not hit then
             return false
         end
 
         local instance = hit.Instance
-        if instance == targetPart
-            or (targetModel and instance:IsDescendantOf(targetModel))
-            or (targetPart.Parent and targetPart.Parent ~= Workspace and instance:IsDescendantOf(targetPart.Parent)) then
+        if not instance then
+            return false
+        end
+
+        if instance == targetPart or instance:IsDescendantOf(targetPart.Parent) then
             return false
         end
 
         local isIgnored = false
         if self._wallPenetration then
-            isIgnored = instance:IsA("BasePart") and (instance.Transparency > 0 or not instance.CanCollide)
+            isIgnored = instance:IsA("BasePart") and instance.Transparency > 0
         else
             isIgnored = not instance.CanCollide
                 or instance.Transparency >= 0.95
@@ -409,11 +400,11 @@ function Module:_getClosestTargetToCursor()
 
                 if self._targetMode == "head_only" then
                     local head = vm:FindFirstChild("head")
-                    closestPart, closestDistSq = self:_checkPart(head, mousePos, closestPart, closestDistSq, vm)
+                    closestPart, closestDistSq = self:_checkPart(head, mousePos, closestPart, closestDistSq)
                 else
                     for _, partName in ipairs(TARGET_PARTS) do
                         local part = vm:FindFirstChild(partName)
-                        closestPart, closestDistSq = self:_checkPart(part, mousePos, closestPart, closestDistSq, vm)
+                        closestPart, closestDistSq = self:_checkPart(part, mousePos, closestPart, closestDistSq)
                     end
                 end
             end
@@ -424,7 +415,7 @@ function Module:_getClosestTargetToCursor()
         for _, child in ipairs(Workspace:GetChildren()) do
             local gadgetPart = self:_getGadgetTargetPart(child)
             if gadgetPart then
-                closestPart, closestDistSq = self:_checkPart(gadgetPart, mousePos, closestPart, closestDistSq, child)
+                closestPart, closestDistSq = self:_checkPart(gadgetPart, mousePos, closestPart, closestDistSq)
             end
         end
     end
