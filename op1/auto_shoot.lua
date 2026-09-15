@@ -322,6 +322,9 @@ function Module:_isVisible(targetPart)
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = blacklist
         params.IgnoreWater = true
+        if not self._wallPenetration then
+            params.RespectCanCollide = true
+        end
 
         local hit = Workspace:Raycast(origin, remaining, params)
         if not hit or not hit.Instance then
@@ -466,6 +469,9 @@ function Module:_getTarget()
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = blacklist
         params.IgnoreWater = true
+        if not self._wallPenetration then
+            params.RespectCanCollide = true
+        end
 
         local hit = Workspace:Raycast(currentOrigin, lookDir * remainingDistance, params)
         if not hit or not hit.Instance then

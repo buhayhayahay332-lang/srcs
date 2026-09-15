@@ -333,6 +333,9 @@ function Module:_isWallBlocked(targetPart)
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = blacklist
         params.IgnoreWater = true
+        if not self._wallPenetration then
+            params.RespectCanCollide = true
+        end
 
         local hit = Workspace:Raycast(currentOrigin, remaining, params)
         if not hit then
