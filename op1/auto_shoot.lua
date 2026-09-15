@@ -336,11 +336,9 @@ function Module:_isVisible(targetPart)
         if self._wallPenetration then
             isIgnored = hit.Instance:IsA("BasePart") and hit.Instance.Transparency > 0
         else
-            isIgnored = not hit.Instance.CanCollide
-                or hit.Instance.Transparency >= 0.95
+            isIgnored = hit.Instance.Transparency >= 0.95
                 or hit.Instance.Name == "BulletHole"
                 or hit.Instance:IsA("Beam")
-                or (hit.Instance:IsA("BasePart") and hit.Instance.Transparency > 0)
         end
 
         if isIgnored then
@@ -488,7 +486,7 @@ function Module:_getTarget()
         if self._wallPenetration then
             isSoftPassThrough = hitPart:IsA("BasePart") and (hitPart.Transparency > 0 or not hitPart.CanCollide)
         else
-            isSoftPassThrough = not hitPart.CanCollide or hitPart.Transparency >= 0.95 or hitPart.Name == "BulletHole" or hitPart:IsA("Beam") or (hitPart:IsA("BasePart") and hitPart.Transparency > 0)
+            isSoftPassThrough = hitPart.Transparency >= 0.95 or hitPart.Name == "BulletHole" or hitPart:IsA("Beam")
         end
 
         if isSoftPassThrough then

@@ -352,11 +352,9 @@ function Module:_isWallBlocked(targetPart)
         if self._wallPenetration then
             isIgnored = instance:IsA("BasePart") and instance.Transparency > 0
         else
-            isIgnored = not instance.CanCollide
-                or instance.Transparency >= 0.95
+            isIgnored = instance.Transparency >= 0.95
                 or instance.Name == "BulletHole"
                 or instance:IsA("Beam")
-                or (instance:IsA("BasePart") and instance.Transparency > 0)
         end
 
         if isIgnored then
